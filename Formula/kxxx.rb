@@ -1,9 +1,9 @@
 class Kxxx < Formula
   desc "Keychain-first secrets CLI for macOS"
   homepage "https://github.com/kxxx-dev/kxxx"
-  url "https://github.com/kxxx-dev/kxxx/archive/c35325451f14beec2cdc83462cba44a2b30c7298.tar.gz"
+  url "https://github.com/kxxx-dev/kxxx/archive/f1d34e959c8e82e3c4e06abe32ae69f7b37632be.tar.gz"
   version "0.1.0"
-  sha256 "e829a871effccc6181b01088c892cdcd1b636f175326166461ea2b334faef365"
+  sha256 "139a898d9ec2163faa96f6a6ba0c86878d4b019955350a60f18a5eaf90ae8cb5"
   license "MIT"
 
   depends_on :macos
