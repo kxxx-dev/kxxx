@@ -1,0 +1,16 @@
+#compdef kxxx
+
+_kxxx() {
+  local -a commands
+  commands=(
+    'set:set secret value'
+    'get:get secret value'
+    'env:print env exports'
+    'run:run command with injected env'
+    'migrate:migration helpers'
+    'audit:scan plaintext indicators'
+  )
+  _describe 'command' commands
+}
+
+_kxxx "$@"

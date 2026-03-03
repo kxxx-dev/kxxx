@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/common.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/keychain.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/repo.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/env.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/migrate.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/audit.sh"
+
+kxxx_usage() {
+  cat <<'USAGE'
+Usage:
+  kxxx set <account> [--value <value>|--stdin] [--service <name>]
+  kxxx get <account> [--service <name>] [--fallback-service <name>]
+  kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
+  kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
+  kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
+  kxxx migrate service [--from <name>] [--to <name>] [--dry-run|--apply]
+  kxxx audit [--summary|--list] [--strict] [paths...]
+
+Defaults:
+  service: kxxx.secrets
+  repo: auto
+USAGE
+}
+
+cmd_set() {
+  local service="${KXXX_DEFAULT_SERVICE}" account="" mode="prompt" value=""
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift; service="${1:-}" ;;
+      --service=*)
+        service="${1#*=}" ;;
+      --value)
+        shift; value="${1:-}"; mode="arg" ;;
+      --value=*)
+        value="${1#*=}"; mode="arg" ;;
+      --stdin)
+        mode="stdin" ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx set <account> [--value <value>|--stdin] [--service <name>]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        if [[ -z "$account" ]]; then
+          account="$1"
+        else
+          kxxx_die "unexpected argument: $1"
+        fi ;;
+    esac
+    shift || true
+  done
+
+  [[ -n "$account" ]] || kxxx_die "account is required"
+
+  case "$mode" in
+    stdin)
+      value="$(cat)"
+      ;;
+    prompt)
+      read -r -s "value?value: "
+      echo
+      ;;
+  esac
+
+  kxxx_keychain_set "$service" "$account" "$value"
+}
+
+cmd_get() {
+  local service="${KXXX_DEFAULT_SERVICE}" fallback_service="" account=""
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift; service="${1:-}" ;;
+      --service=*)
+        service="${1#*=}" ;;
+      --fallback-service)
+        shift; fallback_service="${1:-}" ;;
+      --fallback-service=*)
+        fallback_service="${1#*=}" ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx get <account> [--service <name>] [--fallback-service <name>]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        if [[ -z "$account" ]]; then
+          account="$1"
+        else
+          kxxx_die "unexpected argument: $1"
+        fi ;;
+    esac
+    shift || true
+  done
+
+  [[ -n "$account" ]] || kxxx_die "account is required"
+
+  if kxxx_keychain_get "$service" "$account"; then
+    return 0
+  fi
+
+  if [[ -n "$fallback_service" ]]; then
+    kxxx_keychain_get "$fallback_service" "$account"
+    return $?
+  fi
+
+  return 1
+}
+
+cmd_env() {
+  kxxx_env_main "$@"
+}
+
+cmd_run() {
+  kxxx_run_main "$@"
+}
+
+cmd_migrate() {
+  [[ $# -gt 0 ]] || kxxx_die "migrate subcommand is required (import|service)"
+  local sub="$1"
+  shift
+  case "$sub" in
+    import)
+      kxxx_migrate_import_main "$@"
+      ;;
+    service)
+      kxxx_migrate_service_main "$@"
+      ;;
+    *)
+      kxxx_die "unknown migrate subcommand: $sub"
+      ;;
+  esac
+}
+
+cmd_audit() {
+  kxxx_audit_main "$@"
+}
+
+main() {
+  [[ $# -gt 0 ]] || {
+    kxxx_usage
+    return 0
+  }
+
+  local cmd="$1"
+  shift
+
+  case "$cmd" in
+    set)
+      cmd_set "$@"
+      ;;
+    get)
+      cmd_get "$@"
+      ;;
+    env)
+      cmd_env "$@"
+      ;;
+    run)
+      cmd_run "$@"
+      ;;
+    migrate)
+      cmd_migrate "$@"
+      ;;
+    audit)
+      cmd_audit "$@"
+      ;;
+    -h|--help|help)
+      kxxx_usage
+      ;;
+    *)
+      kxxx_die "unknown command: $cmd"
+      ;;
+  esac
+}
+
+main "$@"

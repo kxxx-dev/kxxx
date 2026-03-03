@@ -1,0 +1,45 @@
+# kxxx
+
+`kxxx` is a macOS Keychain-first CLI for secret loading and migration.
+
+## Install (Homebrew tap)
+
+```bash
+brew tap kxxx-dev/kxxx
+brew install kxxx
+```
+
+## Commands
+
+```bash
+kxxx set <account> [--value <value>|--stdin] [--service <name>]
+kxxx get <account> [--service <name>] [--fallback-service <name>]
+kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
+kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
+kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
+kxxx migrate service [--from nil.secrets] [--to kxxx.secrets] [--dry-run|--apply]
+kxxx audit [--summary|--list] [--strict] [paths...]
+```
+
+## Defaults
+
+- service: `kxxx.secrets`
+- repo detection: `git rev-parse --show-toplevel` basename, fallback to current directory basename
+- audit roots (auto): `~/src`, `~/.config`
+
+## Typical usage
+
+```bash
+# set global env secret
+kxxx set env/OPENAI_API_KEY --stdin < ~/.secrets/openai
+
+# run app command with injected vars
+kxxx run --repo auto -- npm run dev
+
+# print export lines for current shell
+eval "$(kxxx env --repo auto --shell zsh)"
+
+# one-time service migration for existing users
+kxxx migrate service --from nil.secrets --to kxxx.secrets --dry-run
+kxxx migrate service --from nil.secrets --to kxxx.secrets --apply
+```
