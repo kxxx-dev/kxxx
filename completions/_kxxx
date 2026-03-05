@@ -53,6 +53,14 @@ _kxxx() {
       ;;
     migrate)
       local migrate_cmd="${words[3]:-}"
+      if [[ -z "$migrate_cmd" ]]; then
+        local -a migrate_commands=(
+          'import:import secrets from file'
+          'service:map legacy names to service names'
+        )
+        _describe 'migrate command' migrate_commands
+        return
+      fi
       case "$migrate_cmd" in
         import)
           _arguments \
