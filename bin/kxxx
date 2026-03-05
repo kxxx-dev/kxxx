@@ -23,12 +23,14 @@ source "${ROOT_DIR}/lib/kxxx/env.sh"
 source "${ROOT_DIR}/lib/kxxx/migrate.sh"
 # shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/audit.sh"
+kxxx_require_bash_version
 
 kxxx_usage() {
   cat <<'USAGE'
 Usage:
-  kxxx set <account> [--value <value>|--stdin] [--service <name>]
+  kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>]
   kxxx get <account> [--service <name>] [--fallback-service <name>]
+  kxxx list [--service <name>] [--json]
   kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
   kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
   kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
@@ -42,22 +44,38 @@ USAGE
 }
 
 cmd_set() {
-  local service="${KXXX_DEFAULT_SERVICE}" account="" mode="prompt" value=""
+  local service="${KXXX_DEFAULT_SERVICE}" output="text" account="" mode="prompt" value=""
   while (($# > 0)); do
     case "$1" in
       --service)
-        shift; service="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
       --service=*)
-        service="${1#*=}" ;;
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
       --value)
-        shift; value="${1:-}"; mode="arg" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --value"
+        [[ "$mode" == "prompt" ]] || kxxx_die "only one of --value or --stdin is allowed"
+        value="$1"
+        mode="arg"
+        ;;
       --value=*)
-        value="${1#*=}"; mode="arg" ;;
+        [[ "$mode" == "prompt" ]] || kxxx_die "only one of --value or --stdin is allowed"
+        value="${1#*=}"
+        mode="arg"
+        ;;
       --stdin)
+        [[ "$mode" == "prompt" ]] || kxxx_die "only one of --value or --stdin is allowed"
         mode="stdin" ;;
+      --json)
+        output="json" ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx set <account> [--value <value>|--stdin] [--service <name>]
+Usage: kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>]
 USAGE
         return 0 ;;
       --*)
@@ -85,6 +103,11 @@ USAGE
   esac
 
   kxxx_keychain_set "$service" "$account" "$value"
+  if [[ "$output" == "json" ]]; then
+    printf '{"status":"ok","service":"%s","account":"%s"}\n' \
+      "$(kxxx_json_escape "$service")" \
+      "$(kxxx_json_escape "$account")"
+  fi
 }
 
 cmd_get() {
@@ -92,13 +115,23 @@ cmd_get() {
   while (($# > 0)); do
     case "$1" in
       --service)
-        shift; service="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
       --service=*)
-        service="${1#*=}" ;;
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
       --fallback-service)
-        shift; fallback_service="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --fallback-service"
+        fallback_service="$1"
+        ;;
       --fallback-service=*)
-        fallback_service="${1#*=}" ;;
+        fallback_service="${1#*=}"
+        [[ -n "$fallback_service" ]] || kxxx_die "missing value for --fallback-service"
+        ;;
       -h|--help)
         cat <<'USAGE'
 Usage: kxxx get <account> [--service <name>] [--fallback-service <name>]
@@ -128,6 +161,56 @@ USAGE
   fi
 
   return 1
+}
+
+cmd_list() {
+  local service="${KXXX_DEFAULT_SERVICE}" output="text" account
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
+      --service=*)
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --json)
+        output="json"
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx list [--service <name>] [--json]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        kxxx_die "unexpected argument: $1" ;;
+    esac
+    shift || true
+  done
+
+  local -a accounts=()
+  mapfile -t accounts < <(kxxx_keychain_list_accounts "$service")
+
+  if [[ "$output" == "json" ]]; then
+    local first=1
+    printf '{'
+    printf '"service":"%s","accounts":[' "$(kxxx_json_escape "$service")"
+    for account in "${accounts[@]}"; do
+      if [[ $first -eq 0 ]]; then
+        printf ','
+      fi
+      first=0
+      printf '"%s"' "$(kxxx_json_escape "$account")"
+    done
+    printf ']}\n'
+    return 0
+  fi
+
+  printf '%s\n' "${accounts[@]}"
 }
 
 cmd_env() {
@@ -174,6 +257,9 @@ main() {
       ;;
     get)
       cmd_get "$@"
+      ;;
+    list)
+      cmd_list "$@"
       ;;
     env)
       cmd_env "$@"

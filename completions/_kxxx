@@ -5,12 +5,81 @@ _kxxx() {
   commands=(
     'set:set secret value'
     'get:get secret value'
+    'list:list accounts for service'
     'env:print env exports'
     'run:run command with injected env'
     'migrate:migration helpers'
     'audit:scan plaintext indicators'
   )
   _describe 'command' commands
+
+  local cmd="${words[2]:-}"
+
+  case "$cmd" in
+    list)
+      _arguments \
+        '--service[service prefix to filter]:service:' \
+        '--json[emit JSON output]' \
+        '(-h --help)'{-h,--help}'[show help]'
+        ;;
+    set)
+      _arguments \
+        '--service[service name]:service:' \
+        '--value[value to set]:value:' \
+        '--stdin[read value from stdin]' \
+        '--json[emit JSON output]' \
+        '(-h --help)'{-h,--help}'[show help]'
+      ;;
+    get)
+      _arguments \
+        '--service[service name]:service:' \
+        '--fallback-service[service to fallback to]:service:' \
+        '(-h --help)'{-h,--help}'[show help]'
+      ;;
+    env)
+      _arguments \
+        '--repo[repo selector]:repo:' \
+        '--shell[output shell format]:shell:(zsh bash dotenv json)' \
+        '--service[service name]:service:' \
+        '--strict[exit non-zero if unsafe values are found]' \
+        '(-h --help)'{-h,--help}'[show help]'
+      ;;
+    run)
+      _arguments \
+        '--repo[repo selector]:repo:' \
+        '--service[service name]:service:' \
+        '(-h --help)'{-h,--help}'[show help]' \
+        '1:command:_normal'
+      ;;
+    migrate)
+      local migrate_cmd="${words[3]:-}"
+      case "$migrate_cmd" in
+        import)
+          _arguments \
+            '--dry-run[show change plan]' \
+            '--apply[apply migration]' \
+            '--service[service name]:service:' \
+            '--keys-root[key file root path]:path:' \
+            '(-h --help)'{-h,--help}'[show help]'
+          ;;
+        service)
+          _arguments \
+            '--from[source service]:service:' \
+            '--to[target service]:service:' \
+            '--dry-run[show change plan]' \
+            '--apply[apply migration]' \
+            '(-h --help)'{-h,--help}'[show help]'
+          ;;
+      esac
+      ;;
+    audit)
+      _arguments \
+        '--summary[show summary only]' \
+        '--list[list findings by file]' \
+        '--strict[non-zero on any finding]' \
+        '1:paths:_files'
+      ;;
+  esac
 }
 
 _kxxx "$@"

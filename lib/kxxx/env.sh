@@ -72,17 +72,32 @@ kxxx_env_main() {
   while (($# > 0)); do
     case "$1" in
       --repo)
-        shift; repo="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --repo"
+        repo="$1"
+        ;;
       --repo=*)
-        repo="${1#*=}" ;;
+        repo="${1#*=}"
+        [[ -n "$repo" ]] || kxxx_die "missing value for --repo"
+        ;;
       --shell)
-        shift; shell="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --shell"
+        shell="$1"
+        ;;
       --shell=*)
-        shell="${1#*=}" ;;
+        shell="${1#*=}"
+        [[ -n "$shell" ]] || kxxx_die "missing value for --shell"
+        ;;
       --service)
-        shift; service="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
       --service=*)
-        service="${1#*=}" ;;
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
       --strict)
         strict=1 ;;
       -h|--help)
@@ -118,13 +133,23 @@ kxxx_run_main() {
   while (($# > 0)); do
     case "$1" in
       --repo)
-        shift; repo="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --repo"
+        repo="$1"
+        ;;
       --repo=*)
-        repo="${1#*=}" ;;
+        repo="${1#*=}"
+        [[ -n "$repo" ]] || kxxx_die "missing value for --repo"
+        ;;
       --service)
-        shift; service="${1:-}" ;;
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
       --service=*)
-        service="${1#*=}" ;;
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
       --)
         shift
         break
@@ -156,5 +181,5 @@ USAGE
     env_args+=("${key}=${env_map[$key]}")
   done
 
-  env "${env_args[@]}" "$@"
+  env -- "${env_args[@]}" "$@"
 }

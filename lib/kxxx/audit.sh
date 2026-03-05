@@ -61,6 +61,7 @@ USAGE
   )
 
   local allow_ssh_key="${HOME}/src/ssh/yyykn_work.pem"
+  local file_path
 
   local tmp_matches tmp_filtered
   tmp_matches="$(mktemp)"
