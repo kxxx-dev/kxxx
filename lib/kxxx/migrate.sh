@@ -17,6 +17,7 @@ kxxx_migrate_required_accounts=(
 
 kxxx_migrate_collect_import_accounts() {
   local keys_root="$1"
+  local name value row link pw ak sk rc
   local -n accounts_ref="$2"
   local -n values_ref="$3"
 
@@ -100,16 +101,22 @@ kxxx_migrate_import_main() {
         mode="apply"
         ;;
       --service)
-        shift; service="${1:-}"
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
         ;;
       --service=*)
         service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
         ;;
       --keys-root)
-        shift; keys_root="${1:-}"
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --keys-root"
+        keys_root="$1"
         ;;
       --keys-root=*)
         keys_root="${1#*=}"
+        [[ -n "$keys_root" ]] || kxxx_die "missing value for --keys-root"
         ;;
       -h|--help)
         cat <<'USAGE'
@@ -128,7 +135,7 @@ USAGE
   declare -a values=()
   kxxx_migrate_collect_import_accounts "$keys_root" accounts values
 
-  local i account value
+  local i account value found
   local ready=0 missing=0
   echo "Mode: $mode"
   echo "Service: $service"
@@ -187,16 +194,22 @@ kxxx_migrate_service_main() {
         mode="apply"
         ;;
       --from)
-        shift; from_service="${1:-}"
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --from"
+        from_service="$1"
         ;;
       --from=*)
         from_service="${1#*=}"
+        [[ -n "$from_service" ]] || kxxx_die "missing value for --from"
         ;;
       --to)
-        shift; to_service="${1:-}"
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --to"
+        to_service="$1"
         ;;
       --to=*)
         to_service="${1#*=}"
+        [[ -n "$to_service" ]] || kxxx_die "missing value for --to"
         ;;
       -h|--help)
         cat <<'USAGE'

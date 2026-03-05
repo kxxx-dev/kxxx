@@ -12,13 +12,20 @@ brew install kxxx
 ## Commands
 
 ```bash
-kxxx set <account> [--value <value>|--stdin] [--service <name>]
+kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>]
 kxxx get <account> [--service <name>] [--fallback-service <name>]
+kxxx list [--service <name>] [--json]
 kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
 kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
 kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
 kxxx migrate service [--from nil.secrets] [--to kxxx.secrets] [--dry-run|--apply]
 kxxx audit [--summary|--list] [--strict] [paths...]
+```
+
+LLM-friendly output:
+```bash
+kxxx list --service kxxx.secrets --json
+kxxx set env/OPENAI_API_KEY --value secret-value --json
 ```
 
 ## Defaults
