@@ -5,13 +5,21 @@ kxxx_broker_home_dir() {
   user_name="$(id -un)"
 
   if command -v dscl >/dev/null 2>&1; then
-    dscl . -read "/Users/${user_name}" NFSHomeDirectory 2>/dev/null | awk '/NFSHomeDirectory:/ {print $2}'
-    return 0
+    local home_dir=""
+    home_dir="$(dscl . -read "/Users/${user_name}" NFSHomeDirectory 2>/dev/null | awk '/NFSHomeDirectory:/ {print $2}')"
+    if [[ -n "$home_dir" ]]; then
+      printf '%s\n' "$home_dir"
+      return 0
+    fi
   fi
 
   if command -v getent >/dev/null 2>&1; then
-    getent passwd "$user_name" | cut -d: -f6
-    return 0
+    local home_dir=""
+    home_dir="$(getent passwd "$user_name" | cut -d: -f6)"
+    if [[ -n "$home_dir" ]]; then
+      printf '%s\n' "$home_dir"
+      return 0
+    fi
   fi
 
   printf '%s\n' "$HOME"

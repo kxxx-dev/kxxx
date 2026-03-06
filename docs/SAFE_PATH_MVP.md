@@ -13,7 +13,7 @@ This slice adds the first brokered safe path to `kxxx` without changing the lega
 ## Runtime Boundary
 
 The caller provides only a `SecretRef`.
-`kxxx` resolves the raw secret internally, checks policy at the broker boundary, and performs the provider call behind that boundary.
+`kxxx` checks policy at the broker boundary, resolves the raw secret internally, and performs the provider call behind that boundary.
 The broker result and audit event never include the raw secret.
 
 ## Intentionally Out of Scope

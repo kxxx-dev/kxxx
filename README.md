@@ -54,7 +54,7 @@ kxxx migrate service --from nil.secrets --to kxxx.secrets --apply
 
 ## Safe Path vs Compatibility Path
 
-- Safe path: `kxxx broker github.create_issue` accepts an opaque `SecretRef`, resolves the secret internally, applies a minimal repo allowlist policy, and performs the provider call without returning the raw secret.
+- Safe path: `kxxx broker github.create_issue` accepts an opaque `SecretRef`, applies a minimal repo allowlist policy, then (if allowed) resolves the secret internally and performs the provider call without returning the raw secret.
 - Compatibility path: `get`, `env`, and `run` remain available for existing workflows and can still materialize secret values to the caller or child process environment.
 
 This MVP keeps the new safe path intentionally narrow:
