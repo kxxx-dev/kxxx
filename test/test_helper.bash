@@ -15,4 +15,6 @@ source "$ROOT_DIR/lib/kxxx/broker.sh"
 
 kxxx_test_reset_state() {
   kxxx_secret_memory_reset
+  unset KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS
+  unset KXXX_GITHUB_API_BASE_URL
 }
