@@ -8,6 +8,7 @@ _kxxx() {
     'list:list accounts for service'
     'env:print env exports'
     'run:run command with injected env'
+    'broker:run safe-path brokered operation'
     'migrate:migration helpers'
     'audit:scan plaintext indicators'
   )
@@ -50,6 +51,26 @@ _kxxx() {
         '--service[service name]:service:' \
         '(-h --help)'{-h,--help}'[show help]' \
         '1:command:_normal'
+      ;;
+    broker)
+      local broker_op="${words[3]:-}"
+      if [[ -z "$broker_op" ]]; then
+        local -a broker_ops=(
+          'github.create_issue:create a GitHub issue via safe path'
+        )
+        _describe 'broker operation' broker_ops
+        return
+      fi
+      case "$broker_op" in
+        github.create_issue)
+          _arguments \
+            '--ref[opaque secret reference]:secret-ref:' \
+            '--repo[target repository]:repository:' \
+            '--title[issue title]:title:' \
+            '--body[issue body]:body:' \
+            '(-h --help)'{-h,--help}'[show help]'
+          ;;
+      esac
       ;;
     migrate)
       local migrate_cmd="${words[3]:-}"
