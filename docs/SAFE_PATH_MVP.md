@@ -28,4 +28,4 @@ The broker result and audit event never include the raw secret.
 
 - the in-memory backend is process-local, so this MVP is primarily proven through tests and internal APIs
 - the safe path is limited to GitHub issue creation
-- policy configuration is intentionally minimal and loaded from `KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS` or `~/.config/kxxx/broker/github.create_issue.repos`
+- policy configuration is intentionally minimal and loaded from `~/.config/kxxx/broker/github.create_issue.repos`

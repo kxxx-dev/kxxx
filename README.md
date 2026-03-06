@@ -61,4 +61,4 @@ This MVP keeps the new safe path intentionally narrow:
 
 - only `github.create_issue` is brokered
 - only an in-memory `SecretRef` backend is included
-- policy is a minimal exact-match allowlist loaded from `KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS` or `~/.config/kxxx/broker/github.create_issue.repos`
+- policy is a minimal exact-match allowlist loaded from `~/.config/kxxx/broker/github.create_issue.repos`

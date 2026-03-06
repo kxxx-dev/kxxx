@@ -15,8 +15,9 @@ setup() {
 
 teardown() {
   rm -f "$KXXX_BROKER_AUDIT_LOG" "$KXXX_TEST_PROVIDER_MARKER"
-  unset KXXX_BROKER_AUDIT_LOG KXXX_TEST_PROVIDER_MARKER
+  unset KXXX_BROKER_AUDIT_LOG KXXX_TEST_PROVIDER_MARKER KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS
   unset -f \
+    kxxx_broker_home_dir \
     kxxx_broker_policy_load_github_create_issue_allow_repos \
     kxxx_github_http_create_issue || true
 }
@@ -25,11 +26,16 @@ teardown() {
   local secret="github_pat_super_secret_value_123456789"
   local ref=""
   local audit_contents=""
+  local policy_home="$BATS_TEST_TMPDIR/home-success"
+  local policy_file="$policy_home/.config/kxxx/broker/github.create_issue.repos"
 
   kxxx_secret_memory_store "$secret" "success-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+  export KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS="ignored/by-test"
 
-  kxxx_broker_policy_load_github_create_issue_allow_repos() {
-    printf '%s' "octo/repo"
+  kxxx_broker_home_dir() {
+    printf '%s' "$policy_home"
   }
 
   kxxx_github_http_create_issue() {
@@ -68,11 +74,16 @@ teardown() {
   local secret="github_pat_secret_for_deny_123456789"
   local ref=""
   local audit_contents=""
+  local policy_home="$BATS_TEST_TMPDIR/home-deny"
+  local policy_file="$policy_home/.config/kxxx/broker/github.create_issue.repos"
 
   kxxx_secret_memory_store "$secret" "deny-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/allowed" > "$policy_file"
+  export KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS="octo/denied"
 
-  kxxx_broker_policy_load_github_create_issue_allow_repos() {
-    printf '%s' "octo/allowed"
+  kxxx_broker_home_dir() {
+    printf '%s' "$policy_home"
   }
 
   kxxx_github_http_create_issue() {
