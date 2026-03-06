@@ -16,6 +16,10 @@ source "${ROOT_DIR}/lib/kxxx/common.sh"
 # shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/keychain.sh"
 # shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/secret_ref.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/broker.sh"
+# shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/repo.sh"
 # shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/env.sh"
@@ -33,6 +37,7 @@ Usage:
   kxxx list [--service <name>] [--json]
   kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
   kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
+  kxxx broker github.create_issue --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
   kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
   kxxx migrate service [--from <name>] [--to <name>] [--dry-run|--apply]
   kxxx audit [--summary|--list] [--strict] [paths...]
@@ -238,6 +243,10 @@ cmd_migrate() {
   esac
 }
 
+cmd_broker() {
+  kxxx_broker_main "$@"
+}
+
 cmd_audit() {
   kxxx_audit_main "$@"
 }
@@ -266,6 +275,9 @@ main() {
       ;;
     run)
       cmd_run "$@"
+      ;;
+    broker)
+      cmd_broker "$@"
       ;;
     migrate)
       cmd_migrate "$@"
