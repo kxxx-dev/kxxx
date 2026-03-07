@@ -1,6 +1,24 @@
 # kxxx
 
-`kxxx` is a macOS Keychain-first CLI for secret loading and migration.
+`kxxx` is a secret runtime that now includes an experimental brokered safe path while keeping compatibility commands for existing secret-loading workflows.
+
+Safe path is preferred for new integrations, and new integrations should prefer brokered execution when possible. In the safe path, `kxxx` resolves secret material internally and returns only the brokered result. Compatibility-path commands remain available for existing workflows, but they can materialize raw secrets to the caller or child process environment and are therefore less safe.
+
+The current narrow MVP is `kxxx broker github.create_issue`. Today it is primarily proven through tests and internal APIs, and [docs/SAFE_PATH_MVP.md](docs/SAFE_PATH_MVP.md) defines the slice boundary and current limitations.
+
+## Safe Path vs Compatibility Path
+
+- Preferred safe path: `kxxx broker github.create_issue` accepts an opaque `SecretRef`, applies a minimal repo allowlist policy, records structured broker audit events, then (if allowed) resolves the secret internally and performs the provider call without returning the raw secret.
+- Safe path audit: `kxxx broker audit` exports the structured broker event log from `~/.local/state/kxxx/broker.audit.jsonl` by default, or from `KXXX_BROKER_AUDIT_LOG` / `--file <path>` when overridden.
+- Compatibility path: `get`, `env`, and `run` remain available for existing workflows and can still materialize raw secret values to the caller or child process environment.
+- Legacy audit path: `kxxx audit` still scans files for leaked secrets; it does not read or format the broker runtime audit log.
+
+This MVP keeps the new safe path intentionally narrow:
+
+- only `github.create_issue` is brokered
+- only an in-memory `SecretRef` backend is included
+- policy is a minimal exact-match allowlist loaded from `~/.config/kxxx/broker/github.create_issue.repos`
+- structured broker audit events are stored as JSONL and never include raw secret material
 
 ## Install (Homebrew tap)
 
@@ -39,30 +57,22 @@ kxxx set env/OPENAI_API_KEY --value secret-value --json
 ## Typical usage
 
 ```bash
+# preferred safe path today: start with the brokered MVP entrypoints
+kxxx broker --help
+
+# current MVP note: the in-memory SecretRef backend is primarily proven through tests and internal APIs
+# see docs/SAFE_PATH_MVP.md for the current slice boundary and limitations
+
 # set global env secret
 kxxx set env/OPENAI_API_KEY --stdin < ~/.secrets/openai
 
-# run app command with injected vars
+# compatibility path: run app command with injected vars
 kxxx run --repo auto -- npm run dev
 
-# print export lines for current shell
+# compatibility path: print export lines for current shell
 eval "$(kxxx env --repo auto --shell zsh)"
 
 # one-time service migration for existing users
 kxxx migrate service --from nil.secrets --to kxxx.secrets --dry-run
 kxxx migrate service --from nil.secrets --to kxxx.secrets --apply
 ```
-
-## Safe Path vs Compatibility Path
-
-- Safe path: `kxxx broker github.create_issue` accepts an opaque `SecretRef`, applies a minimal repo allowlist policy, records structured broker audit events, then (if allowed) resolves the secret internally and performs the provider call without returning the raw secret.
-- Safe path audit: `kxxx broker audit` exports the structured broker event log from `~/.local/state/kxxx/broker.audit.jsonl` by default, or from `KXXX_BROKER_AUDIT_LOG` / `--file <path>` when overridden.
-- Compatibility path: `get`, `env`, and `run` remain available for existing workflows and can still materialize secret values to the caller or child process environment.
-- Legacy audit path: `kxxx audit` still scans files for leaked secrets; it does not read or format the broker runtime audit log.
-
-This MVP keeps the new safe path intentionally narrow:
-
-- only `github.create_issue` is brokered
-- only an in-memory `SecretRef` backend is included
-- policy is a minimal exact-match allowlist loaded from `~/.config/kxxx/broker/github.create_issue.repos`
-- structured broker audit events are stored as JSONL and never include raw secret material
