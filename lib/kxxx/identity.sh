@@ -211,14 +211,22 @@ kxxx_identity_upsert_record() {
 kxxx_identity_set_descriptor() {
   local service="$1" descriptor="$2" value="$3" backend="${4:-auto}" out_var="${5:-}"
   local ref="" existing_descriptor="" binding_scope="" binding_repo="" binding_name=""
-  local resolved_backend=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
 
   if kxxx_identity_find_record_by_descriptor "$service" "$descriptor" ref existing_descriptor binding_scope binding_repo binding_name; then
-    :
+    if kxxx_secret_ref_parse "$ref" ref_backend ref_id; then
+      ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || return 1
+      if [[ "$ref_impl_backend" != "$resolved_backend" ]]; then
+        ref="$(kxxx_identity_create_ref_for_backend "$resolved_backend")" || return 1
+      fi
+    else
+      ref="$(kxxx_identity_create_ref_for_backend "$resolved_backend")" || return 1
+    fi
   fi
 
   if [[ -z "$ref" ]]; then
-    resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
     ref="$(kxxx_identity_create_ref_for_backend "$resolved_backend")" || return 1
   fi
 

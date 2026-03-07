@@ -105,6 +105,7 @@ kxxx_backend_encrypted_file_set() {
 
   tmp_plain="$(mktemp)"
   tmp_next="$(mktemp)"
+  trap 'rm -f -- "$tmp_plain" "$tmp_next"' RETURN
   kxxx_backend_encrypted_file_decrypt_to "$tmp_plain"
 
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -122,7 +123,8 @@ kxxx_backend_encrypted_file_set() {
     "$(kxxx_backend_base64_encode "$value")" >> "$tmp_next"
 
   kxxx_backend_encrypted_file_encrypt_from "$tmp_next"
-  rm -f "$tmp_plain" "$tmp_next"
+  trap - RETURN
+  rm -f -- "$tmp_plain" "$tmp_next"
 }
 
 kxxx_backend_encrypted_file_list_accounts() {

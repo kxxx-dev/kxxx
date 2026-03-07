@@ -108,6 +108,25 @@ seed_keychain_account() {
   [ "$output" = "from-keychain" ]
 }
 
+@test "resetting an existing descriptor honors a new backend selection" {
+  local secret_ref=""
+
+  run_kxxx_keychain_override set env/MOVE_TOKEN --service test.secrets --backend darwin-keychain --value keychain-value
+  [ "$status" -eq 0 ]
+
+  run_kxxx_linux_encrypted set env/MOVE_TOKEN --service test.secrets --backend encrypted-file --value encrypted-value
+  [ "$status" -eq 0 ]
+
+  run_kxxx_linux_encrypted ref env/MOVE_TOKEN --service test.secrets --backend encrypted-file
+  [ "$status" -eq 0 ]
+  secret_ref="$output"
+  [[ "$secret_ref" == secretref:v1:encrypted-file:* ]]
+
+  run_kxxx_linux_encrypted get env/MOVE_TOKEN --service test.secrets --backend encrypted-file
+  [ "$status" -eq 0 ]
+  [ "$output" = "encrypted-value" ]
+}
+
 @test "migrate import can write secrets through encrypted-file backend" {
   mkdir -p "$KXXX_TEST_HOME/.config/zsh" "$BATS_TEST_TMPDIR/keys"
   printf '%s\n' 'export GITHUB_MCP_TOKEN=from-encrypted-import' > "$KXXX_TEST_HOME/.config/zsh/secrets.local.zsh"
