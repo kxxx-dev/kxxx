@@ -138,6 +138,81 @@ teardown() {
   broker_test_assert_no_leaks "$combined_output" "$secret"
 }
 
+@test "github.create_issue resolves keychain refs when service is provided" {
+  local secret="github_pat_keychain_secret_value_123456789"
+  local ref="secretref:v1:keychain:broker-ref"
+  local audit_path="$BATS_TEST_TMPDIR/keychain-success.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local combined_output=""
+
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_keychain_get_ref() {
+    local service="$1" ref_arg="$2"
+    [[ "$service" == "test.secrets" ]]
+    [[ "$ref_arg" == "$ref" ]]
+    printf '%s\n' "$secret"
+  }
+
+  kxxx_github_http_create_issue() {
+    local token="$1"
+    local -n response_ref="$5"
+    local -n status_ref="$6"
+
+    printf '%s' "$token" > "$KXXX_TEST_PROVIDER_MARKER"
+    response_ref='{"number":52,"html_url":"https://github.com/octo/repo/issues/52"}'
+    status_ref="201"
+    return 0
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue --service test.secrets --ref "$ref" --repo octo/repo --title "hello"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"issue_number":52'* ]]
+  [[ "$output" == *'"issue_url":"https://github.com/octo/repo/issues/52"'* ]]
+  [[ -z "$stderr" ]]
+  [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "$secret" ]]
+
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 5 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "keychain" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "backend")" == "keychain" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "result")" == "resolved" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
+}
+
+@test "keychain secret refs require --service" {
+  local ref="secretref:v1:keychain:missing-service"
+  local audit_path="$BATS_TEST_TMPDIR/keychain-missing-service.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_keychain_get_ref() {
+    printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
+    return 99
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue --ref "$ref" --repo octo/repo --title "hello"
+
+  [ "$status" -ne 0 ]
+  [[ -z "$output" ]]
+  [[ "$stderr" == *'--service is required for keychain secret refs'* ]]
+  [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
+
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 4 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "keychain" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "reason")" == "service_required_for_keychain_ref" ]]
+}
+
 @test "policy deny blocks secret resolution and provider execution" {
   local secret="github_pat_secret_for_deny_123456789"
   local ref=""

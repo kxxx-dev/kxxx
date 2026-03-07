@@ -4,7 +4,7 @@
 
 Safe path is preferred for new integrations, and new integrations should prefer brokered execution when possible. In the safe path, `kxxx` resolves secret material internally and returns only the brokered result. Compatibility-path commands remain available for existing workflows, but they can materialize raw secrets to the caller or child process environment and are therefore less safe.
 
-The current narrow MVP is `kxxx broker github.create_issue`. Today it is primarily proven through tests and internal APIs, and [docs/SAFE_PATH_MVP.md](docs/SAFE_PATH_MVP.md) defines the slice boundary and current limitations.
+The current narrow MVP is `kxxx broker github.create_issue`. Callers can look up a broker-usable `secret_ref` with `kxxx ref <descriptor> --service <name>` and pass that ref plus `--service` to the broker, and [docs/SAFE_PATH_MVP.md](docs/SAFE_PATH_MVP.md) defines the slice boundary and current limitations.
 
 ## Safe Path vs Compatibility Path
 
@@ -16,7 +16,7 @@ The current narrow MVP is `kxxx broker github.create_issue`. Today it is primari
 This MVP keeps the new safe path intentionally narrow:
 
 - only `github.create_issue` is brokered
-- only an in-memory `SecretRef` backend is included
+- broker-visible refs are limited to `kxxx`-managed `secretref:v1:keychain:*` identities plus process-local `secretref:v1:memory:*` refs for tests and internal APIs
 - policy is a minimal exact-match allowlist loaded from `~/.config/kxxx/broker/github.create_issue.repos`
 - structured broker audit events are stored as JSONL and never include raw secret material
 
@@ -31,11 +31,12 @@ brew install kxxx
 
 ```bash
 kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>]
+kxxx ref <account> [--service <name>] [--json]
 kxxx get <account> [--service <name>] [--fallback-service <name>]
 kxxx list [--service <name>] [--json]
 kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
 kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
-kxxx broker github.create_issue --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
+kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
 kxxx broker audit [--file <path>]
 kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
 kxxx migrate service [--from nil.secrets] [--to kxxx.secrets] [--dry-run|--apply]
@@ -57,10 +58,11 @@ kxxx set env/OPENAI_API_KEY --value secret-value --json
 ## Typical usage
 
 ```bash
-# preferred safe path today: start with the brokered MVP entrypoints
-kxxx broker --help
+# preferred safe path today: look up an opaque ref and pass only that ref to the broker
+ref="$(kxxx ref env/GITHUB_TOKEN --service kxxx.secrets)"
+kxxx broker github.create_issue --service kxxx.secrets --ref "$ref" --repo octo/repo --title "hello"
 
-# current MVP note: the in-memory SecretRef backend is primarily proven through tests and internal APIs
+# current MVP note: process-local memory refs are still mainly for tests and internal APIs
 # see docs/SAFE_PATH_MVP.md for the current slice boundary and limitations
 
 # set global env secret

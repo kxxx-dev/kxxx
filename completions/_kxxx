@@ -4,6 +4,7 @@ _kxxx() {
   local -a commands
   commands=(
     'set:set secret value'
+    'ref:get opaque secret reference'
     'get:get secret value'
     'list:list accounts for service'
     'env:print env exports'
@@ -28,6 +29,12 @@ _kxxx() {
         '--service[service name]:service:' \
         '--value[value to set]:value:' \
         '--stdin[read value from stdin]' \
+        '--json[emit JSON output]' \
+        '(-h --help)'{-h,--help}'[show help]'
+      ;;
+    ref)
+      _arguments \
+        '--service[service name]:service:' \
         '--json[emit JSON output]' \
         '(-h --help)'{-h,--help}'[show help]'
       ;;
@@ -70,6 +77,7 @@ _kxxx() {
           ;;
         github.create_issue)
           _arguments \
+            '--service[service name for keychain-backed refs]:service:' \
             '--ref[opaque secret reference]:secret-ref:' \
             '--repo[target repository]:repository:' \
             '--title[issue title]:title:' \

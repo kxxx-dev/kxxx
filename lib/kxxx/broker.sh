@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
 kxxx_broker_home_dir() {
+  if [[ -n "${KXXX_BROKER_HOME:-}" ]]; then
+    printf '%s\n' "$KXXX_BROKER_HOME"
+    return 0
+  fi
+
   local user_name=""
   user_name="$(id -un)"
 
@@ -270,7 +275,7 @@ kxxx_github_http_create_issue() {
 }
 
 kxxx_broker_execute_github_create_issue() {
-  local ref="$1" repo="$2" title="$3" body="$4"
+  local service="$1" ref="$2" repo="$3" title="$4" body="$5"
   local token="" provider="github" operation="create_issue"
   local response="" http_status="" issue_number="" issue_url=""
   local sink="" request_id="" backend="" audit_ref=""
@@ -322,7 +327,29 @@ kxxx_broker_execute_github_create_issue() {
     return 1
   fi
 
-  if ! kxxx_secret_resolve "$ref" token; then
+  if [[ "$backend" == "keychain" ]]; then
+    if [[ -z "$service" ]]; then
+      extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"service_required_for_keychain_ref"' \
+        "$(kxxx_json_escape "$backend")")"
+      if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+        echo "kxxx: broker audit log write failed" >&2
+        return 1
+      fi
+      echo "kxxx: --service is required for keychain secret refs" >&2
+      return 1
+    fi
+
+    if ! token="$(kxxx_keychain_get_ref "$service" "$ref")"; then
+      extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"secret_ref_unresolved"' \
+        "$(kxxx_json_escape "$backend")")"
+      if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+        echo "kxxx: broker audit log write failed" >&2
+        return 1
+      fi
+      echo "kxxx: secret ref could not be resolved" >&2
+      return 1
+    fi
+  elif ! kxxx_secret_resolve "$ref" token; then
     extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"secret_ref_unresolved"' \
       "$(kxxx_json_escape "$backend")")"
     if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
@@ -416,7 +443,7 @@ kxxx_broker_audit_main() {
 kxxx_broker_usage() {
   cat <<'USAGE'
 Usage:
-  kxxx broker github.create_issue --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
+  kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
   kxxx broker audit [--file <path>]
 
 Notes:
@@ -427,7 +454,7 @@ USAGE
 }
 
 kxxx_broker_main() {
-  local operation="${1:-}" ref="" repo="" title="" body=""
+  local operation="${1:-}" service="" ref="" repo="" title="" body=""
   if [[ $# -eq 0 || "$operation" == "-h" || "$operation" == "--help" || "$operation" == "help" ]]; then
     kxxx_broker_usage
     return 0
@@ -450,6 +477,14 @@ kxxx_broker_main() {
         ;;
       --ref=*)
         ref="${1#*=}"
+        ;;
+      --service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
+      --service=*)
+        service="${1#*=}"
         ;;
       --repo)
         shift
@@ -495,7 +530,7 @@ kxxx_broker_main() {
 
   case "$operation" in
     github.create_issue)
-      kxxx_broker_execute_github_create_issue "$ref" "$repo" "$title" "$body"
+      kxxx_broker_execute_github_create_issue "$service" "$ref" "$repo" "$title" "$body"
       ;;
     *)
       kxxx_die "unsupported broker operation: $operation"

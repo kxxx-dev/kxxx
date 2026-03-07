@@ -35,11 +35,12 @@ kxxx_usage() {
   cat <<'USAGE'
 Usage:
   kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>]
+  kxxx ref <account> [--service <name>] [--json]
   kxxx get <account> [--service <name>] [--fallback-service <name>]
   kxxx list [--service <name>] [--json]
   kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
   kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
-  kxxx broker github.create_issue --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
+  kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
   kxxx broker audit [--file <path>]
   kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
   kxxx migrate service [--from <name>] [--to <name>] [--dry-run|--apply]
@@ -116,6 +117,53 @@ USAGE
       "$(kxxx_json_escape "$service")" \
       "$(kxxx_json_escape "$account")"
   fi
+}
+
+cmd_ref() {
+  local service="${KXXX_DEFAULT_SERVICE}" output="text" account="" resolved_ref=""
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
+      --service=*)
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --json)
+        output="json"
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx ref <account> [--service <name>] [--json]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        if [[ -z "$account" ]]; then
+          account="$1"
+        else
+          kxxx_die "unexpected argument: $1"
+        fi ;;
+    esac
+    shift || true
+  done
+
+  [[ -n "$account" ]] || kxxx_die "account is required"
+  kxxx_identity_get_descriptor_ref "$service" "$account" resolved_ref || return 1
+
+  if [[ "$output" == "json" ]]; then
+    printf '{"status":"ok","service":"%s","account":"%s","secret_ref":"%s"}\n' \
+      "$(kxxx_json_escape "$service")" \
+      "$(kxxx_json_escape "$account")" \
+      "$(kxxx_json_escape "$resolved_ref")"
+    return 0
+  fi
+
+  printf '%s\n' "$resolved_ref"
 }
 
 cmd_get() {
@@ -322,6 +370,9 @@ main() {
   case "$cmd" in
     set)
       cmd_set "$@"
+      ;;
+    ref)
+      cmd_ref "$@"
       ;;
     get)
       cmd_get "$@"

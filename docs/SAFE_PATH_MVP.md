@@ -6,8 +6,8 @@ This slice adds the first brokered safe path to `kxxx` without changing the lega
 
 - provider: GitHub
 - operation: `github.create_issue`
-- `SecretRef`: opaque identity in the form `secretref:v1:memory:<id>`
-- in-memory backend: test/local-spike storage for `SecretRef -> secret material`
+- `SecretRef`: opaque identity in the form `secretref:v1:<backend>:<id>`
+- supported refs: `kxxx`-managed `secretref:v1:keychain:<id>` for CLI-visible flows and `secretref:v1:memory:<id>` for tests/internal spikes
 - minimum policy gate: provider must be `github`, operation must be `create_issue`, and repo must be allowlisted
 - minimal audit trail: sanitized structured broker events with no raw secret material
 
@@ -25,9 +25,10 @@ This is separate from the legacy `kxxx audit` command, which remains a filesyste
 
 Supported entrypoint:
 
-`kxxx broker github.create_issue --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]`
+`kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]`
 
-- `--ref` is required and must be a `secretref:v1:memory:<id>` for this MVP slice
+- `--service` is required for `secretref:v1:keychain:<id>` refs and optional for `secretref:v1:memory:<id>` refs
+- `--ref` is required and may be a `secretref:v1:keychain:<id>` from `kxxx ref <descriptor> --service <name>` or a `secretref:v1:memory:<id>` for tests and internal spikes
 - `--repo` is required and identifies the target repository in `owner/repo` form
 - `--title` is required
 - `--body` is optional
@@ -40,6 +41,7 @@ Supported entrypoint:
 - failure returns a non-zero exit code, no stdout payload, and stderr-only errors such as:
   - `kxxx: broker audit log write failed`
   - `kxxx: broker policy denied github.create_issue for repo=<owner/repo>`
+  - `kxxx: --service is required for keychain secret refs`
   - `kxxx: secret ref could not be resolved`
   - `kxxx: broker provider request failed`
 - post-provider audit append failure is a warning-only stderr event, `kxxx: broker audit log write failed after provider success`, and does not turn a successful provider result into a failed command
@@ -60,13 +62,14 @@ Proof-oriented coverage lives in `test/broker.bats` and should continue to verif
 
 - multiple providers
 - policy DSLs
-- persistent safe-path backends
+- generalized persistent safe-path backends beyond the existing managed keychain path
 - cross-platform keychain abstractions
 - refactoring existing compatibility commands
 
 ## Current Limitations
 
-- the in-memory backend is process-local, so this MVP is primarily proven through tests and internal APIs
+- keychain-backed refs are broker-usable when they exist in the local secret index created by `kxxx set` or `migrate import --apply`, and the caller supplies the matching `--service`
+- the in-memory backend remains process-local for tests and internal APIs
 - the safe path is limited to GitHub issue creation
 - policy configuration is intentionally minimal and loaded from `~/.config/kxxx/broker/github.create_issue.repos`
 - structured audit viewing/export is intentionally narrow and only exposes raw JSONL broker events
