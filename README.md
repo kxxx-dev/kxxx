@@ -18,6 +18,7 @@ kxxx list [--service <name>] [--json]
 kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
 kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
 kxxx broker github.create_issue --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
+kxxx broker audit [--file <path>]
 kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
 kxxx migrate service [--from nil.secrets] [--to kxxx.secrets] [--dry-run|--apply]
 kxxx audit [--summary|--list] [--strict] [paths...]
@@ -55,10 +56,13 @@ kxxx migrate service --from nil.secrets --to kxxx.secrets --apply
 ## Safe Path vs Compatibility Path
 
 - Safe path: `kxxx broker github.create_issue` accepts an opaque `SecretRef`, applies a minimal repo allowlist policy, then (if allowed) resolves the secret internally and performs the provider call without returning the raw secret.
+- Safe path audit: `kxxx broker audit` exports structured JSONL events from `~/.local/state/kxxx/broker.audit.jsonl` by default, or from `KXXX_BROKER_AUDIT_LOG` / `--file` when explicitly directed.
 - Compatibility path: `get`, `env`, and `run` remain available for existing workflows and can still materialize secret values to the caller or child process environment.
+- Compatibility audit: legacy `kxxx audit` remains a filesystem secret scanner and is not used to view broker runtime events.
 
 This MVP keeps the new safe path intentionally narrow:
 
 - only `github.create_issue` is brokered
 - only an in-memory `SecretRef` backend is included
 - policy is a minimal exact-match allowlist loaded from `~/.config/kxxx/broker/github.create_issue.repos`
+- broker audit is append-only JSONL with flat machine-readable capability/event fields and no raw secret material

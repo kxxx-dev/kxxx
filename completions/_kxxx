@@ -57,6 +57,7 @@ _kxxx() {
       if [[ -z "$broker_op" ]]; then
         local -a broker_ops=(
           'github.create_issue:create a GitHub issue via safe path'
+          'audit:export structured broker audit JSONL'
         )
         _describe 'broker operation' broker_ops
         return
@@ -68,6 +69,11 @@ _kxxx() {
             '--repo[target repository]:repository:' \
             '--title[issue title]:title:' \
             '--body[issue body]:body:' \
+            '(-h --help)'{-h,--help}'[show help]'
+          ;;
+        audit)
+          _arguments \
+            '--file[structured broker audit file]:path:_files' \
             '(-h --help)'{-h,--help}'[show help]'
           ;;
       esac
