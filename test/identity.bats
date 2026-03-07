@@ -27,7 +27,12 @@ single_ref_account() {
 }
 
 run_kxxx() {
-  run env HOME="$KXXX_TEST_HOME" PATH="$KXXX_TEST_BIN:$KXXX_ORIG_PATH" "$KXXX_BIN" "$@"
+  run env HOME="$KXXX_TEST_HOME" KXXX_BROKER_HOME="$KXXX_TEST_HOME" PATH="$KXXX_TEST_BIN:$KXXX_ORIG_PATH" "$KXXX_BIN" "$@"
+}
+
+install_curl_stub() {
+  cp "$BATS_TEST_DIRNAME/fixtures/curl-stub.sh" "$KXXX_TEST_BIN/curl"
+  chmod +x "$KXXX_TEST_BIN/curl"
 }
 
 test_set_stores_new_values_under_an_opaque_ref_and_records_the_descriptor_mapping() { #@test
@@ -163,4 +168,47 @@ test_migrate_import_apply_writes_imported_secrets_through_opaque_refs_instead_of
   run_kxxx get env/GITHUB_MCP_TOKEN --service test.secrets
   [ "$status" -eq 0 ]
   [ "$output" = "from-dotfile" ]
+}
+
+test_ref_returns_the_managed_secret_ref() { #@test
+  run_kxxx set env/GITHUB_TOKEN --service test.secrets --value broker-secret
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+
+  run_kxxx ref env/GITHUB_TOKEN --service test.secrets --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"service":"test.secrets"'* ]]
+  [[ "$output" == *'"account":"env/GITHUB_TOKEN"'* ]]
+  [[ "$output" == *'"secret_ref":"secretref:v1:keychain:'* ]]
+}
+
+test_broker_resolves_keychain_secret_refs_from_ref_without_exposing_the_secret() { #@test
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local provider_marker="$BATS_TEST_TMPDIR/provider-token"
+  local secret_ref=""
+
+  install_curl_stub
+  export KXXX_TEST_PROVIDER_MARKER="$provider_marker"
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  run_kxxx set env/GITHUB_TOKEN --service test.secrets --value broker-secret
+  [ "$status" -eq 0 ]
+
+  run_kxxx ref env/GITHUB_TOKEN --service test.secrets
+  [ "$status" -eq 0 ]
+  secret_ref="$output"
+  [[ "$secret_ref" == secretref:v1:keychain:* ]]
+
+  run_kxxx broker github.create_issue --service test.secrets --ref "$secret_ref" --repo octo/repo --title "hello" --body "body"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"provider":"github"'* ]]
+  [[ "$output" == *'"operation":"create_issue"'* ]]
+  [[ "$output" == *'"repo":"octo/repo"'* ]]
+  [[ "$output" == *'"issue_number":42'* ]]
+  [[ "$output" == *'"issue_url":"https://github.com/octo/repo/issues/42"'* ]]
+  [[ "$output" != *'broker-secret'* ]]
+  [[ "$(cat "$provider_marker")" == "broker-secret" ]]
 }

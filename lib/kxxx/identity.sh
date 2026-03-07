@@ -168,6 +168,18 @@ kxxx_identity_find_record_by_ref() {
   kxxx_identity_find_record "$1" "ref" "$2" "$3" "$4" "$5" "$6" "$7"
 }
 
+kxxx_identity_get_descriptor_ref() {
+  local service="$1" descriptor="$2"
+  local -n ref_ref="$3"
+  local found_ref="" existing_descriptor="" binding_scope="" binding_repo="" binding_name=""
+
+  if ! kxxx_identity_find_record_by_descriptor "$service" "$descriptor" found_ref existing_descriptor binding_scope binding_repo binding_name; then
+    return 1
+  fi
+
+  ref_ref="$found_ref"
+}
+
 kxxx_identity_upsert_record() {
   local service="$1" ref="$2" descriptor="$3" binding_scope="$4" binding_repo="$5" binding_name="$6"
   local index_file="" index_dir="" tmp_file=""
