@@ -447,9 +447,12 @@ Usage:
   kxxx broker audit [--file <path>]
 
 Notes:
+  - `broker` is the preferred safe path for new integrations.
   - This MVP only supports github.create_issue.
+  - Compatibility-path commands (`get`, `env`, `run`) can materialize raw secret values and remain explicit exceptions.
   - Policy is loaded from ~/.config/kxxx/broker/github.create_issue.repos.
   - Structured broker audit defaults to ~/.local/state/kxxx/broker.audit.jsonl.
+  - Canonical threat model: https://github.com/kxxx-dev/kxxx/blob/main/docs/adr/0001-agent-safe-secret-runtime.md
 USAGE
 }
 
