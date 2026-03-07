@@ -1,0 +1,46 @@
+name: test
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats zsh
+
+      - name: Print tool versions
+        run: |
+          bash --version
+          bats --version
+          zsh --version
+
+      - name: Validate bash scripts
+        run: bash -n bin/kxxx lib/kxxx/*.sh test/test_helper.bash
+
+      - name: Validate zsh completion
+        run: zsh -n completions/_kxxx
+
+      - name: Run broker tests
+        run: timeout 5m bats test/broker.bats
