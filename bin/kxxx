@@ -161,8 +161,11 @@ USAGE
 
   local value=""
   local rc=0
-  kxxx_identity_get_descriptor "$service" "$account" value
-  rc=$?
+  if kxxx_identity_get_descriptor "$service" "$account" value; then
+    rc=0
+  else
+    rc=$?
+  fi
   if [[ $rc -eq 0 ]]; then
     printf '%s\n' "$value"
     return 0
@@ -177,8 +180,11 @@ USAGE
   fi
 
   if [[ -n "$fallback_service" ]]; then
-    kxxx_identity_get_descriptor "$fallback_service" "$account" value
-    rc=$?
+    if kxxx_identity_get_descriptor "$fallback_service" "$account" value; then
+      rc=0
+    else
+      rc=$?
+    fi
     if [[ $rc -eq 0 ]]; then
       printf '%s\n' "$value"
       return 0
