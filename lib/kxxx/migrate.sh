@@ -170,7 +170,7 @@ USAGE
       account="${accounts[$i]}"
       value="${values[$i]}"
       [[ -n "$value" && "$value" != KEYCHAIN_REF:* ]] || continue
-      if kxxx_keychain_set "$service" "$account" "$value"; then
+      if kxxx_identity_store_descriptor "$service" "$account" "$value"; then
         imported=$((imported + 1))
         echo "[IMPORTED] $account"
       else

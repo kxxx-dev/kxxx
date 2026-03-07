@@ -18,6 +18,8 @@ source "${ROOT_DIR}/lib/kxxx/keychain.sh"
 # shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/secret_ref.sh"
 # shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/identity.sh"
+# shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/broker.sh"
 # shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/repo.sh"
@@ -108,7 +110,7 @@ USAGE
       ;;
   esac
 
-  kxxx_keychain_set "$service" "$account" "$value"
+  kxxx_identity_set_descriptor "$service" "$account" "$value"
   if [[ "$output" == "json" ]]; then
     printf '{"status":"ok","service":"%s","account":"%s"}\n' \
       "$(kxxx_json_escape "$service")" \
@@ -157,13 +159,42 @@ USAGE
 
   [[ -n "$account" ]] || kxxx_die "account is required"
 
+  local value=""
+  local rc=0
+  if kxxx_identity_get_descriptor "$service" "$account" value; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [[ $rc -eq 0 ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  if [[ $rc -eq 2 ]]; then
+    return 1
+  fi
+
   if kxxx_keychain_get "$service" "$account"; then
     return 0
   fi
 
   if [[ -n "$fallback_service" ]]; then
-    kxxx_keychain_get "$fallback_service" "$account"
-    return $?
+    if kxxx_identity_get_descriptor "$fallback_service" "$account" value; then
+      rc=0
+    else
+      rc=$?
+    fi
+    if [[ $rc -eq 0 ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+
+    if [[ $rc -eq 2 ]]; then
+      return 1
+    fi
+
+    kxxx_keychain_get "$fallback_service" "$account" && return 0
   fi
 
   return 1
@@ -199,7 +230,34 @@ USAGE
   done
 
   local -a accounts=()
-  mapfile -t accounts < <(kxxx_keychain_list_accounts "$service")
+  local -a indexed_accounts=()
+  local -a direct_accounts=()
+  local account=""
+  declare -A seen_accounts=()
+
+  mapfile -t indexed_accounts < <(kxxx_identity_list_descriptors "$service")
+  mapfile -t direct_accounts < <(kxxx_keychain_list_accounts "$service")
+
+  for account in "${indexed_accounts[@]}"; do
+    [[ -n "$account" ]] || continue
+    [[ -n "${seen_accounts[$account]+x}" ]] && continue
+    seen_accounts["$account"]=1
+    accounts+=("$account")
+  done
+
+  for account in "${direct_accounts[@]}"; do
+    [[ -n "$account" ]] || continue
+    if [[ "$account" == ref/* ]]; then
+      continue
+    fi
+    [[ -n "${seen_accounts[$account]+x}" ]] && continue
+    seen_accounts["$account"]=1
+    accounts+=("$account")
+  done
+
+  if [[ ${#accounts[@]} -gt 0 ]]; then
+    mapfile -t accounts < <(printf '%s\n' "${accounts[@]}" | sort)
+  fi
 
   if [[ "$output" == "json" ]]; then
     local first=1
