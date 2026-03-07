@@ -56,6 +56,26 @@ teardown() {
     kxxx_github_http_create_issue || true
 }
 
+@test "top-level help distinguishes safe path from compatibility path" {
+  run "$ROOT_DIR/bin/kxxx" --help
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Modes:"* ]]
+  [[ "$output" == *"Safe path: \`kxxx broker ...\` is the preferred path for new integrations"* ]]
+  [[ "$output" == *"Compatibility path: \`kxxx get\`, \`kxxx env\`, and \`kxxx run\` can materialize raw secrets"* ]]
+  [[ "$output" == *"Threat model and invariants: https://github.com/kxxx-dev/kxxx/blob/main/docs/adr/0001-agent-safe-secret-runtime.md"* ]]
+}
+
+@test "broker help keeps MVP scope and links to the canonical invariants" {
+  run "$ROOT_DIR/bin/kxxx" broker --help
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"\`broker\` is the preferred safe path for new integrations."* ]]
+  [[ "$output" == *"This MVP only supports github.create_issue."* ]]
+  [[ "$output" == *"Compatibility-path commands (\`get\`, \`env\`, \`run\`) can materialize raw secret values"* ]]
+  [[ "$output" == *"Canonical threat model: https://github.com/kxxx-dev/kxxx/blob/main/docs/adr/0001-agent-safe-secret-runtime.md"* ]]
+}
+
 @test "github.create_issue emits structured audit sequence without exposing the secret" {
   local secret="github_pat_super_secret_value_123456789"
   local ref=""

@@ -46,6 +46,11 @@ Usage:
   kxxx migrate service [--from <name>] [--to <name>] [--dry-run|--apply]
   kxxx audit [--summary|--list] [--strict] [paths...]
 
+Modes:
+  Safe path: `kxxx broker ...` is the preferred path for new integrations and keeps raw secret values behind the broker boundary.
+  Compatibility path: `kxxx get`, `kxxx env`, and `kxxx run` can materialize raw secrets for existing workflows.
+  Threat model and invariants: https://github.com/kxxx-dev/kxxx/blob/main/docs/adr/0001-agent-safe-secret-runtime.md
+
 Defaults:
   service: kxxx.secrets
   repo: auto

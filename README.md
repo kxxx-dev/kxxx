@@ -4,7 +4,7 @@
 
 Safe path is preferred for new integrations, and new integrations should prefer brokered execution when possible. In the safe path, `kxxx` resolves secret material internally and returns only the brokered result. Compatibility-path commands remain available for existing workflows, but they can materialize raw secrets to the caller or child process environment and are therefore less safe.
 
-The current narrow MVP is `kxxx broker github.create_issue`. Callers can look up a broker-usable `secret_ref` with `kxxx ref <descriptor> --service <name>` and pass that ref plus `--service` to the broker, and [docs/SAFE_PATH_MVP.md](docs/SAFE_PATH_MVP.md) defines the slice boundary and current limitations.
+The canonical threat model and v1 security invariants live in [docs/adr/0001-agent-safe-secret-runtime.md](docs/adr/0001-agent-safe-secret-runtime.md). In short: the safe path keeps raw secret values behind the broker boundary, compatibility-path commands remain explicit legacy mode, secret identity is distinct from env bindings, and current v1 audit intentionally keeps sanitized metadata such as opaque refs, backend names, target resources, and process context. The current narrow MVP is `kxxx broker github.create_issue`, and [docs/SAFE_PATH_MVP.md](docs/SAFE_PATH_MVP.md) defines only that slice boundary and its current limitations.
 
 ## Safe Path vs Compatibility Path
 
@@ -19,6 +19,15 @@ This MVP keeps the new safe path intentionally narrow:
 - broker-visible refs are limited to `kxxx`-managed `secretref:v1:keychain:*` identities plus process-local `secretref:v1:memory:*` refs for tests and internal APIs
 - policy is a minimal exact-match allowlist loaded from `~/.config/kxxx/broker/github.create_issue.repos`
 - structured broker audit events are stored as JSONL and never include raw secret material
+
+## Threat Model Summary
+
+- The preferred safe path never requires the caller or an LLM/agent to see the raw secret value; the caller supplies only a `SecretRef` plus operation arguments.
+- Compatibility-path commands remain explicit and secondary. `get`, `env`, and `run` can still materialize raw secrets for existing workflows.
+- When a brokered operation has policy, policy is evaluated before secret resolution or provider execution.
+- Raw secret values must not be emitted to stdout, stderr, or structured broker audit events.
+- The current v1 audit trail may still retain opaque refs, backend identifiers, target resources, and process metadata. Further metadata minimization is deferred until after the MVP.
+- Interactive desktop keyrings and headless/CI execution are different trust environments and should not be treated as interchangeable backend assumptions. The current implementation does not claim broader headless-safe backend support.
 
 ## Install (Homebrew tap)
 
