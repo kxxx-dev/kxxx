@@ -4,39 +4,69 @@ bats_require_minimum_version 1.5.0
 
 load ./test_helper.bash
 
+broker_test_default_audit_log() {
+  printf '%s/.local/state/kxxx/broker.audit.jsonl' "$KXXX_TEST_HOME"
+}
+
+broker_test_json_string() {
+  local json="$1" field="$2"
+
+  if [[ "$json" =~ \"$field\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  fi
+}
+
+broker_test_load_audit_lines() {
+  local audit_file="$1"
+  mapfile -t BROKER_TEST_AUDIT_LINES < "$audit_file"
+}
+
+broker_test_assert_no_leaks() {
+  local haystack="$1"
+  shift
+
+  local secret=""
+  for secret in "$@"; do
+    [[ "$haystack" != *"$secret"* ]]
+  done
+}
+
 setup() {
   kxxx_test_reset_state
-  export KXXX_BROKER_AUDIT_LOG
-  KXXX_BROKER_AUDIT_LOG="$(mktemp)"
   export KXXX_TEST_PROVIDER_MARKER
   KXXX_TEST_PROVIDER_MARKER="$(mktemp)"
+  export KXXX_TEST_HOME="$BATS_TEST_TMPDIR/home"
+  mkdir -p "$KXXX_TEST_HOME"
   : > "$KXXX_TEST_PROVIDER_MARKER"
+  unset KXXX_BROKER_AUDIT_LOG
+
+  kxxx_broker_home_dir() {
+    printf '%s' "$KXXX_TEST_HOME"
+  }
 }
 
 teardown() {
-  rm -f "$KXXX_BROKER_AUDIT_LOG" "$KXXX_TEST_PROVIDER_MARKER"
-  unset KXXX_BROKER_AUDIT_LOG KXXX_TEST_PROVIDER_MARKER KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS
+  rm -f "$KXXX_TEST_PROVIDER_MARKER"
+  rm -rf "$KXXX_TEST_HOME"
+  unset KXXX_BROKER_AUDIT_LOG KXXX_TEST_PROVIDER_MARKER KXXX_TEST_HOME
   unset -f \
     kxxx_broker_home_dir \
+    kxxx_broker_emit_event \
     kxxx_broker_policy_load_github_create_issue_allow_repos \
     kxxx_github_http_create_issue || true
 }
 
-@test "github.create_issue succeeds without exposing the secret" {
+@test "github.create_issue emits structured audit sequence without exposing the secret" {
   local secret="github_pat_super_secret_value_123456789"
   local ref=""
-  local audit_contents=""
-  local policy_home="$BATS_TEST_TMPDIR/home-success"
-  local policy_file="$policy_home/.config/kxxx/broker/github.create_issue.repos"
+  local audit_path=""
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local request_id=""
+  local combined_output=""
 
   kxxx_secret_memory_store "$secret" "success-ref" ref
   mkdir -p "$(dirname "$policy_file")"
   printf '%s\n' "octo/repo" > "$policy_file"
-  export KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS="ignored/by-test"
-
-  kxxx_broker_home_dir() {
-    printf '%s' "$policy_home"
-  }
 
   kxxx_github_http_create_issue() {
     local token="$1" repo="$2" title="$3" body="$4"
@@ -58,33 +88,67 @@ teardown() {
   [[ "$output" == *'"status":"ok"'* ]]
   [[ "$output" == *'"issue_number":42'* ]]
   [[ "$output" == *'"issue_url":"https://github.com/octo/repo/issues/42"'* ]]
-  [[ "$output" != *"$secret"* ]]
   [[ -z "$stderr" ]]
   [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "$secret" ]]
 
-  audit_contents="$(cat "$KXXX_BROKER_AUDIT_LOG")"
-  [[ "$audit_contents" == *'"status":"success"'* ]]
-  [[ "$audit_contents" == *'"provider":"github"'* ]]
-  [[ "$audit_contents" == *'"operation":"create_issue"'* ]]
-  [[ "$audit_contents" == *'"repo":"octo/repo"'* ]]
-  [[ "$audit_contents" != *"$secret"* ]]
+  audit_path="$(broker_test_default_audit_log)"
+  [ -f "$audit_path" ]
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 5 ]
+
+  request_id="$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "request_id")"
+  [[ -n "$request_id" ]]
+
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "event")" == "request_received" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "event")" == "policy_decision" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "event")" == "secret_backend_access" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "event")" == "secret_resolution" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "event")" == "provider_result" ]]
+
+  local line=""
+  for line in "${BROKER_TEST_AUDIT_LINES[@]}"; do
+    [[ "$(broker_test_json_string "$line" "kind")" == "broker_audit" ]]
+    [[ "$(broker_test_json_string "$line" "request_id")" == "$request_id" ]]
+    [[ "$(broker_test_json_string "$line" "tool")" == "kxxx" ]]
+    [[ "$(broker_test_json_string "$line" "provider")" == "github" ]]
+    [[ "$(broker_test_json_string "$line" "operation")" == "create_issue" ]]
+    [[ "$(broker_test_json_string "$line" "resource_type")" == "github_repo" ]]
+    [[ "$(broker_test_json_string "$line" "resource")" == "octo/repo" ]]
+    [[ "$(broker_test_json_string "$line" "secret_ref")" == "$ref" ]]
+    [[ "$(broker_test_json_string "$line" "side_effect_class")" == "external_write" ]]
+    [[ "$(broker_test_json_string "$line" "subject_type")" == "process" ]]
+    [[ -n "$(broker_test_json_string "$line" "subject_user")" ]]
+    [[ -n "$(broker_test_json_string "$line" "subject_uid")" ]]
+    [[ -n "$(broker_test_json_string "$line" "subject_pid")" ]]
+    [[ -n "$(broker_test_json_string "$line" "subject_ppid")" ]]
+    [[ -n "$(broker_test_json_string "$line" "subject_argv0")" ]]
+  done
+
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "decision")" == "allow" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "reason")" == "repo_allowlist_match" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "memory" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "result")" == "attempted" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "backend")" == "memory" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "result")" == "resolved" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "result")" == "success" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "http_status")" == "201" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "issue_number")" == "42" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
 }
 
-@test "policy deny blocks provider execution" {
+@test "policy deny blocks secret resolution and provider execution" {
   local secret="github_pat_secret_for_deny_123456789"
   local ref=""
-  local audit_contents=""
-  local policy_home="$BATS_TEST_TMPDIR/home-deny"
-  local policy_file="$policy_home/.config/kxxx/broker/github.create_issue.repos"
+  local audit_path="$BATS_TEST_TMPDIR/policy-deny.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local combined_output=""
 
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
   kxxx_secret_memory_store "$secret" "deny-ref" ref
   mkdir -p "$(dirname "$policy_file")"
   printf '%s\n' "octo/allowed" > "$policy_file"
-  export KXXX_BROKER_GITHUB_CREATE_ISSUE_ALLOW_REPOS="octo/denied"
-
-  kxxx_broker_home_dir() {
-    printf '%s' "$policy_home"
-  }
 
   kxxx_github_http_create_issue() {
     printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
@@ -96,24 +160,34 @@ teardown() {
   [ "$status" -ne 0 ]
   [[ -z "$output" ]]
   [[ "$stderr" == *'broker policy denied github.create_issue for repo=octo/denied'* ]]
-  [[ "$stderr" != *"$secret"* ]]
   [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
 
-  audit_contents="$(cat "$KXXX_BROKER_AUDIT_LOG")"
-  [[ "$audit_contents" == *'"status":"denied"'* ]]
-  [[ "$audit_contents" == *'"detail":"policy_denied"'* ]]
-  [[ "$audit_contents" != *"$secret"* ]]
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 2 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "event")" == "request_received" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "event")" == "policy_decision" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "decision")" == "deny" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "reason")" == "repo_not_allowlisted" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
 }
 
-@test "unknown SecretRef fails without leaking the secret" {
+@test "unknown SecretRef is audited as unresolved without calling the provider" {
   local secret="github_pat_unused_secret_123456789"
   local known_ref=""
-  local audit_contents=""
+  local audit_path="$BATS_TEST_TMPDIR/unknown-ref.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local combined_output=""
 
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
   kxxx_secret_memory_store "$secret" "known-ref" known_ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
 
-  kxxx_broker_policy_load_github_create_issue_allow_repos() {
-    printf '%s' "octo/repo"
+  kxxx_github_http_create_issue() {
+    printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
+    return 99
   }
 
   run --separate-stderr kxxx_broker_main github.create_issue --ref "secretref:v1:memory:missing-ref" --repo octo/repo --title "hello"
@@ -121,25 +195,36 @@ teardown() {
   [ "$status" -ne 0 ]
   [[ -z "$output" ]]
   [[ "$stderr" == *'secret ref could not be resolved'* ]]
-  [[ "$stderr" != *"$secret"* ]]
+  [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
 
-  audit_contents="$(cat "$KXXX_BROKER_AUDIT_LOG")"
-  [[ "$audit_contents" == *'"status":"error"'* ]]
-  [[ "$audit_contents" == *'"detail":"secret_ref_unresolved"'* ]]
-  [[ "$audit_contents" != *"$secret"* ]]
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 4 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "event")" == "request_received" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "event")" == "policy_decision" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "decision")" == "allow" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "event")" == "secret_backend_access" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "memory" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "result")" == "attempted" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "event")" == "secret_resolution" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "result")" == "unresolved" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "reason")" == "secret_ref_unresolved" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
 }
 
-@test "provider failure stays inside the broker boundary" {
+@test "provider failure is audited without leaking upstream secret-looking content" {
   local secret="github_pat_provider_failure_secret_123456789"
   local upstream_leak="github_pat_upstream_should_not_leak"
   local ref=""
-  local audit_contents=""
+  local audit_path="$BATS_TEST_TMPDIR/provider-failure.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local combined_output=""
 
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
   kxxx_secret_memory_store "$secret" "provider-failure-ref" ref
-
-  kxxx_broker_policy_load_github_create_issue_allow_repos() {
-    printf '%s' "octo/repo"
-  }
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
 
   kxxx_github_http_create_issue() {
     local token="$1"
@@ -157,14 +242,136 @@ teardown() {
   [ "$status" -ne 0 ]
   [[ -z "$output" ]]
   [[ "$stderr" == *'broker provider request failed'* ]]
-  [[ "$stderr" != *"$secret"* ]]
-  [[ "$stderr" != *"$upstream_leak"* ]]
   [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "$secret" ]]
 
-  audit_contents="$(cat "$KXXX_BROKER_AUDIT_LOG")"
-  [[ "$audit_contents" == *'"status":"error"'* ]]
-  [[ "$audit_contents" == *'"detail":"provider_request_failed:500"'* ]]
-  [[ "$audit_contents" != *"$secret"* ]]
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 5 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "event")" == "provider_result" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "result")" == "error" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "http_status")" == "500" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "reason")" == "provider_request_failed" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret" "$upstream_leak"
+}
+
+@test "provider success remains successful if the final audit append fails" {
+  local secret="github_pat_success_audit_failure_secret_123456789"
+  local ref=""
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+
+  kxxx_secret_memory_store "$secret" "success-audit-failure-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_github_http_create_issue() {
+    local token="$1"
+    local -n response_ref="$5"
+    local -n status_ref="$6"
+
+    printf '%s' "$token" > "$KXXX_TEST_PROVIDER_MARKER"
+    response_ref='{"number":77,"html_url":"https://github.com/octo/repo/issues/77"}'
+    status_ref="201"
+    return 0
+  }
+
+  kxxx_broker_emit_event() {
+    local event_name="$3"
+
+    if [[ "$event_name" == "provider_result" ]]; then
+      return 1
+    fi
+
+    return 0
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue --ref "$ref" --repo octo/repo --title "hello"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"issue_number":77'* ]]
+  [[ "$stderr" == *'broker audit log write failed after provider success'* ]]
+  [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "$secret" ]]
+  broker_test_assert_no_leaks "$(printf '%s\n%s' "$output" "$stderr")" "$secret"
+}
+
+@test "invalid secret-like ref input is redacted from structured audit" {
+  local raw_ref="github_pat_not_a_secretref_but_should_not_be_logged"
+  local audit_path="$BATS_TEST_TMPDIR/invalid-ref.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local combined_output=""
+
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_github_http_create_issue() {
+    printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
+    return 99
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue --ref "$raw_ref" --repo octo/repo --title "hello"
+
+  [ "$status" -ne 0 ]
+  [[ -z "$output" ]]
+  [[ "$stderr" == *'secret ref could not be resolved'* ]]
+  [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
+
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 4 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "secret_ref")" == "invalid_secret_ref" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "unknown" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "secret_ref")" == "invalid_secret_ref" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "result")" == "unresolved" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$raw_ref"
+}
+
+@test "broker audit exports the default structured audit sink" {
+  local secret="github_pat_audit_export_secret_123456789"
+  local ref=""
+  local audit_path=""
+
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  kxxx_secret_memory_store "$secret" "export-default-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_github_http_create_issue() {
+    local -n response_ref="$5"
+    local -n status_ref="$6"
+
+    response_ref='{"number":9,"html_url":"https://github.com/octo/repo/issues/9"}'
+    status_ref="201"
+    return 0
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue --ref "$ref" --repo octo/repo --title "hello"
+  [ "$status" -eq 0 ]
+
+  audit_path="$(broker_test_default_audit_log)"
+  run kxxx_broker_main audit
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == "$(cat "$audit_path")" ]]
+}
+
+@test "broker audit supports explicit file override and missing files" {
+  local explicit_file="$BATS_TEST_TMPDIR/explicit-broker-audit.jsonl"
+  local missing_file="$BATS_TEST_TMPDIR/missing-broker-audit.jsonl"
+
+  printf '%s\n' '{"kind":"broker_audit","event":"request_received"}' > "$explicit_file"
+
+  run kxxx_broker_main audit --file "$explicit_file"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == '{"kind":"broker_audit","event":"request_received"}' ]]
+
+  run kxxx_broker_main audit --file "$missing_file"
+
+  [ "$status" -eq 0 ]
+  [[ -z "$output" ]]
 }
 
 @test "github HTTP transport disables user curl config with -q" {
