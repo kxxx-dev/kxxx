@@ -30,7 +30,7 @@ kxxx_secret_ref_parse() {
   local -n backend_ref="$2"
   local -n id_ref="$3"
 
-  if [[ "$ref" =~ ^secretref:v1:([a-z0-9_]+):([A-Za-z0-9._-]+)$ ]]; then
+  if [[ "$ref" =~ ^secretref:v1:([a-z0-9_-]+):([A-Za-z0-9._-]+)$ ]]; then
     backend_ref="${BASH_REMATCH[1]}"
     id_ref="${BASH_REMATCH[2]}"
     return 0

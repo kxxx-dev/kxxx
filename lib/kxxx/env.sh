@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 
 kxxx_collect_env_map() {
-  local service="$1" repo="$2"
-  local -n out_ref="$3"
+  local service="$1" repo="$2" backend="${3:-auto}"
+  local -n out_ref="$4"
   local -a accounts=()
   declare -A owned_bindings=()
   local account name value
   local global_key repo_key
+  local resolved_backend=""
 
-  kxxx_identity_collect_env_map "$service" "$repo" out_ref owned_bindings
-  mapfile -t accounts < <(kxxx_keychain_list_accounts "$service")
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+  kxxx_identity_collect_env_map "$service" "$repo" "$resolved_backend" out_ref owned_bindings
+  mapfile -t accounts < <(kxxx_backend_list_accounts "$resolved_backend" "$service")
 
   for account in "${accounts[@]}"; do
     if [[ "$account" =~ ^env/([A-Za-z_][A-Za-z0-9_]*)$ ]]; then
@@ -18,7 +20,7 @@ kxxx_collect_env_map() {
       repo_key="repo:$repo:$name"
       [[ -n "${owned_bindings[$global_key]+x}" ]] && continue
       [[ -n "${owned_bindings[$repo_key]+x}" ]] && continue
-      if value="$(kxxx_keychain_get "$service" "$account")"; then
+      if value="$(kxxx_backend_get_account "$resolved_backend" "$service" "$account")"; then
         out_ref["$name"]="$value"
       fi
     fi
@@ -30,7 +32,7 @@ kxxx_collect_env_map() {
         name="${BASH_REMATCH[2]}"
         repo_key="repo:$repo:$name"
         [[ -n "${owned_bindings[$repo_key]+x}" ]] && continue
-        if value="$(kxxx_keychain_get "$service" "$account")"; then
+        if value="$(kxxx_backend_get_account "$resolved_backend" "$service" "$account")"; then
           out_ref["$name"]="$value"
         fi
       fi
@@ -78,7 +80,7 @@ kxxx_emit_env() {
 }
 
 kxxx_env_main() {
-  local repo="auto" shell="zsh" service="${KXXX_DEFAULT_SERVICE}" strict=0
+  local repo="auto" shell="zsh" service="${KXXX_DEFAULT_SERVICE}" backend="auto" strict=0
   while (($# > 0)); do
     case "$1" in
       --repo)
@@ -108,11 +110,20 @@ kxxx_env_main() {
         service="${1#*=}"
         [[ -n "$service" ]] || kxxx_die "missing value for --service"
         ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
       --strict)
         strict=1 ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
+Usage: kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--backend <name>] [--strict]
 USAGE
         return 0 ;;
       *)
@@ -126,7 +137,7 @@ USAGE
   fi
 
   declare -A env_map=()
-  if ! kxxx_collect_env_map "$service" "$repo" env_map; then
+  if ! kxxx_collect_env_map "$service" "$repo" "$backend" env_map; then
     [[ "$strict" -eq 1 ]] && return 1
   fi
 
@@ -139,7 +150,7 @@ USAGE
 }
 
 kxxx_run_main() {
-  local repo="auto" service="${KXXX_DEFAULT_SERVICE}"
+  local repo="auto" service="${KXXX_DEFAULT_SERVICE}" backend="auto"
   while (($# > 0)); do
     case "$1" in
       --repo)
@@ -160,13 +171,22 @@ kxxx_run_main() {
         service="${1#*=}"
         [[ -n "$service" ]] || kxxx_die "missing value for --service"
         ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
       --)
         shift
         break
         ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
+Usage: kxxx run [--repo <auto|name>] [--service <name>] [--backend <name>] -- <command...>
 USAGE
         return 0 ;;
       *)
@@ -183,7 +203,7 @@ USAGE
   fi
 
   declare -A env_map=()
-  kxxx_collect_env_map "$service" "$repo" env_map
+  kxxx_collect_env_map "$service" "$repo" "$backend" env_map
 
   declare -a env_args=()
   local key

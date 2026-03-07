@@ -42,5 +42,5 @@ jobs:
       - name: Validate zsh completion
         run: zsh -n completions/_kxxx
 
-      - name: Run broker tests
-        run: timeout 5m bats test/broker.bats
+      - name: Run Bats test suite
+        run: timeout 5m bats test

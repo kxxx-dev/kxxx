@@ -27,7 +27,7 @@ single_ref_account() {
 }
 
 run_kxxx() {
-  run env HOME="$KXXX_TEST_HOME" KXXX_BROKER_HOME="$KXXX_TEST_HOME" PATH="$KXXX_TEST_BIN:$KXXX_ORIG_PATH" "$KXXX_BIN" "$@"
+  run env HOME="$KXXX_TEST_HOME" KXXX_BROKER_HOME="$KXXX_TEST_HOME" KXXX_BACKEND="darwin-keychain" PATH="$KXXX_TEST_BIN:$KXXX_ORIG_PATH" "$KXXX_BIN" "$@"
 }
 
 install_curl_stub() {
