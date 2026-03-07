@@ -71,7 +71,7 @@ kxxx_secret_resolve() {
   case "$backend" in
     memory)
       declare -p KXXX_MEMORY_SECRET_STORE >/dev/null 2>&1 || return 1
-      [[ -v "KXXX_MEMORY_SECRET_STORE[$id]" ]] || return 1
+      [[ -n "${KXXX_MEMORY_SECRET_STORE[$id]+x}" ]] || return 1
       value_ref="${KXXX_MEMORY_SECRET_STORE[$id]}"
       return 0
       ;;

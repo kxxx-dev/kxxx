@@ -25,7 +25,7 @@ kxxx_backend_memory_get() {
 
   declare -p KXXX_MEMORY_BACKEND_STORE >/dev/null 2>&1 || return 1
   key="$(kxxx_backend_memory_store_key "$service" "$account")"
-  [[ -v "KXXX_MEMORY_BACKEND_STORE[$key]" ]] || return 1
+  [[ -n "${KXXX_MEMORY_BACKEND_STORE[$key]+x}" ]] || return 1
   printf '%s\n' "${KXXX_MEMORY_BACKEND_STORE[$key]}"
 }
 
