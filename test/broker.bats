@@ -51,6 +51,7 @@ teardown() {
   unset KXXX_BROKER_AUDIT_LOG KXXX_TEST_PROVIDER_MARKER KXXX_TEST_HOME
   unset -f \
     kxxx_broker_home_dir \
+    kxxx_broker_emit_event \
     kxxx_broker_policy_load_github_create_issue_allow_repos \
     kxxx_github_http_create_issue || true
 }
@@ -252,6 +253,46 @@ teardown() {
 
   combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
   broker_test_assert_no_leaks "$combined_output" "$secret" "$upstream_leak"
+}
+
+@test "provider success remains successful if the final audit append fails" {
+  local secret="github_pat_success_audit_failure_secret_123456789"
+  local ref=""
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+
+  kxxx_secret_memory_store "$secret" "success-audit-failure-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_github_http_create_issue() {
+    local token="$1"
+    local -n response_ref="$5"
+    local -n status_ref="$6"
+
+    printf '%s' "$token" > "$KXXX_TEST_PROVIDER_MARKER"
+    response_ref='{"number":77,"html_url":"https://github.com/octo/repo/issues/77"}'
+    status_ref="201"
+    return 0
+  }
+
+  kxxx_broker_emit_event() {
+    local event_name="$3"
+
+    if [[ "$event_name" == "provider_result" ]]; then
+      return 1
+    fi
+
+    return 0
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue --ref "$ref" --repo octo/repo --title "hello"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"issue_number":77'* ]]
+  [[ "$stderr" == *'broker audit log write failed after provider success'* ]]
+  [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "$secret" ]]
+  broker_test_assert_no_leaks "$(printf '%s\n%s' "$output" "$stderr")" "$secret"
 }
 
 @test "invalid secret-like ref input is redacted from structured audit" {

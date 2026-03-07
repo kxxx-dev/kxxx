@@ -223,6 +223,10 @@ kxxx_broker_emit_event() {
   printf '%s\n' "$event_json" >> "$sink"
 }
 
+kxxx_broker_warn_post_provider_audit_failure() {
+  echo "kxxx: broker audit log write failed after provider success" >&2
+}
+
 kxxx_github_http_create_issue() {
   local token="$1" repo="$2" title="$3" body="$4"
   local -n response_ref="$5"
@@ -356,8 +360,7 @@ kxxx_broker_execute_github_create_issue() {
     extra_fields="${extra_fields},$(printf '"issue_number":"%s"' "$(kxxx_json_escape "$issue_number")")"
   fi
   if ! kxxx_broker_emit_event "$sink" "$request_id" "provider_result" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
-    echo "kxxx: broker audit log write failed" >&2
-    return 1
+    kxxx_broker_warn_post_provider_audit_failure
   fi
 
   printf '{"status":"ok","provider":"github","operation":"create_issue","repo":"%s"' \
