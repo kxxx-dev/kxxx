@@ -14,9 +14,15 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/common.sh"
 # shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/secret_ref.sh"
+# shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/keychain.sh"
 # shellcheck source=/dev/null
-source "${ROOT_DIR}/lib/kxxx/secret_ref.sh"
+source "${ROOT_DIR}/lib/kxxx/backend_memory.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/backend_encrypted_file.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/kxxx/backend.sh"
 # shellcheck source=/dev/null
 source "${ROOT_DIR}/lib/kxxx/identity.sh"
 # shellcheck source=/dev/null
@@ -34,16 +40,16 @@ kxxx_require_bash_version
 kxxx_usage() {
   cat <<'USAGE'
 Usage:
-  kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>]
-  kxxx ref <account> [--service <name>] [--json]
-  kxxx get <account> [--service <name>] [--fallback-service <name>]
-  kxxx list [--service <name>] [--json]
-  kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--strict]
-  kxxx run [--repo <auto|name>] [--service <name>] -- <command...>
+  kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>] [--backend <name>]
+  kxxx ref <account> [--service <name>] [--backend <name>] [--json]
+  kxxx get <account> [--service <name>] [--backend <name>] [--fallback-service <name>]
+  kxxx list [--service <name>] [--backend <name>] [--json]
+  kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--backend <name>] [--strict]
+  kxxx run [--repo <auto|name>] [--service <name>] [--backend <name>] -- <command...>
   kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
   kxxx broker audit [--file <path>]
-  kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
-  kxxx migrate service [--from <name>] [--to <name>] [--dry-run|--apply]
+  kxxx migrate import [--dry-run|--apply] [--service <name>] [--backend <name>] [--keys-root <path>]
+  kxxx migrate service [--from <name>] [--to <name>] [--from-backend <name>] [--to-backend <name>] [--dry-run|--apply]
   kxxx audit [--summary|--list] [--strict] [paths...]
 
 Modes:
@@ -53,12 +59,13 @@ Modes:
 
 Defaults:
   service: kxxx.secrets
+  backend: auto (platform-based: `darwin-keychain` on supported macOS environments, otherwise `encrypted-file`)
   repo: auto
 USAGE
 }
 
 cmd_set() {
-  local service="${KXXX_DEFAULT_SERVICE}" output="text" account="" mode="prompt" value=""
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account="" mode="prompt" value=""
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -69,6 +76,15 @@ cmd_set() {
       --service=*)
         service="${1#*=}"
         [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
         ;;
       --value)
         shift
@@ -89,7 +105,7 @@ cmd_set() {
         output="json" ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>]
+Usage: kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>] [--backend <name>]
 USAGE
         return 0 ;;
       --*)
@@ -116,7 +132,7 @@ USAGE
       ;;
   esac
 
-  kxxx_identity_set_descriptor "$service" "$account" "$value"
+  kxxx_identity_set_descriptor "$service" "$account" "$value" "$backend"
   if [[ "$output" == "json" ]]; then
     printf '{"status":"ok","service":"%s","account":"%s"}\n' \
       "$(kxxx_json_escape "$service")" \
@@ -125,7 +141,8 @@ USAGE
 }
 
 cmd_ref() {
-  local service="${KXXX_DEFAULT_SERVICE}" output="text" account="" resolved_ref=""
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account="" resolved_ref=""
+  local backend_explicit=0
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -137,12 +154,23 @@ cmd_ref() {
         service="${1#*=}"
         [[ -n "$service" ]] || kxxx_die "missing value for --service"
         ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        backend_explicit=1
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        backend_explicit=1
+        ;;
       --json)
         output="json"
         ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx ref <account> [--service <name>] [--json]
+Usage: kxxx ref <account> [--service <name>] [--backend <name>] [--json]
 USAGE
         return 0 ;;
       --*)
@@ -160,6 +188,14 @@ USAGE
   [[ -n "$account" ]] || kxxx_die "account is required"
   kxxx_identity_get_descriptor_ref "$service" "$account" resolved_ref || return 1
 
+  if [[ "$backend_explicit" -eq 1 ]]; then
+    local selected_backend="" ref_backend="" ref_impl_backend="" ref_id=""
+    selected_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+    kxxx_secret_ref_parse "$resolved_ref" ref_backend ref_id || return 1
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || return 1
+    [[ "$selected_backend" == "$ref_impl_backend" ]] || kxxx_die "descriptor is not managed by backend=$selected_backend"
+  fi
+
   if [[ "$output" == "json" ]]; then
     printf '{"status":"ok","service":"%s","account":"%s","secret_ref":"%s"}\n' \
       "$(kxxx_json_escape "$service")" \
@@ -172,7 +208,7 @@ USAGE
 }
 
 cmd_get() {
-  local service="${KXXX_DEFAULT_SERVICE}" fallback_service="" account=""
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" fallback_service="" account=""
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -183,6 +219,15 @@ cmd_get() {
       --service=*)
         service="${1#*=}"
         [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
         ;;
       --fallback-service)
         shift
@@ -195,7 +240,7 @@ cmd_get() {
         ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx get <account> [--service <name>] [--fallback-service <name>]
+Usage: kxxx get <account> [--service <name>] [--backend <name>] [--fallback-service <name>]
 USAGE
         return 0 ;;
       --*)
@@ -214,7 +259,10 @@ USAGE
 
   local value=""
   local rc=0
-  if kxxx_identity_get_descriptor "$service" "$account" value; then
+  local resolved_backend=""
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+
+  if kxxx_identity_get_descriptor "$service" "$account" "$resolved_backend" value; then
     rc=0
   else
     rc=$?
@@ -228,12 +276,12 @@ USAGE
     return 1
   fi
 
-  if kxxx_keychain_get "$service" "$account"; then
+  if kxxx_backend_get_account "$resolved_backend" "$service" "$account"; then
     return 0
   fi
 
   if [[ -n "$fallback_service" ]]; then
-    if kxxx_identity_get_descriptor "$fallback_service" "$account" value; then
+    if kxxx_identity_get_descriptor "$fallback_service" "$account" "$resolved_backend" value; then
       rc=0
     else
       rc=$?
@@ -247,14 +295,14 @@ USAGE
       return 1
     fi
 
-    kxxx_keychain_get "$fallback_service" "$account" && return 0
+    kxxx_backend_get_account "$resolved_backend" "$fallback_service" "$account" && return 0
   fi
 
   return 1
 }
 
 cmd_list() {
-  local service="${KXXX_DEFAULT_SERVICE}" output="text" account
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -266,12 +314,21 @@ cmd_list() {
         service="${1#*=}"
         [[ -n "$service" ]] || kxxx_die "missing value for --service"
         ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
       --json)
         output="json"
         ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx list [--service <name>] [--json]
+Usage: kxxx list [--service <name>] [--backend <name>] [--json]
 USAGE
         return 0 ;;
       --*)
@@ -286,10 +343,12 @@ USAGE
   local -a indexed_accounts=()
   local -a direct_accounts=()
   local account=""
+  local resolved_backend=""
   declare -A seen_accounts=()
 
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
   mapfile -t indexed_accounts < <(kxxx_identity_list_descriptors "$service")
-  mapfile -t direct_accounts < <(kxxx_keychain_list_accounts "$service")
+  mapfile -t direct_accounts < <(kxxx_backend_list_accounts "$resolved_backend" "$service")
 
   for account in "${indexed_accounts[@]}"; do
     [[ -n "$account" ]] || continue

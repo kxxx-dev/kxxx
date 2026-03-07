@@ -206,7 +206,7 @@ teardown() {
   broker_test_assert_no_leaks "$combined_output" "$secret"
 }
 
-@test "keychain secret refs require --service" {
+@test "backend-managed secret refs require --service" {
   local ref="secretref:v1:keychain:missing-service"
   local audit_path="$BATS_TEST_TMPDIR/keychain-missing-service.jsonl"
   local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
@@ -224,13 +224,13 @@ teardown() {
 
   [ "$status" -ne 0 ]
   [[ -z "$output" ]]
-  [[ "$stderr" == *'--service is required for keychain secret refs'* ]]
+  [[ "$stderr" == *'--service is required for backend-managed secret refs'* ]]
   [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
 
   broker_test_load_audit_lines "$audit_path"
   [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 4 ]
   [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "keychain" ]]
-  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "reason")" == "service_required_for_keychain_ref" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "reason")" == "service_required_for_backend_ref" ]]
 }
 
 @test "policy deny blocks secret resolution and provider execution" {

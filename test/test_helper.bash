@@ -11,8 +11,17 @@ source "$ROOT_DIR/lib/kxxx/common.sh"
 # shellcheck source=/dev/null
 source "$ROOT_DIR/lib/kxxx/secret_ref.sh"
 # shellcheck source=/dev/null
+source "$ROOT_DIR/lib/kxxx/keychain.sh"
+# shellcheck source=/dev/null
+source "$ROOT_DIR/lib/kxxx/backend_memory.sh"
+# shellcheck source=/dev/null
+source "$ROOT_DIR/lib/kxxx/backend_encrypted_file.sh"
+# shellcheck source=/dev/null
+source "$ROOT_DIR/lib/kxxx/backend.sh"
+# shellcheck source=/dev/null
 source "$ROOT_DIR/lib/kxxx/broker.sh"
 
 kxxx_test_reset_state() {
   kxxx_secret_memory_reset
+  kxxx_backend_memory_reset
 }

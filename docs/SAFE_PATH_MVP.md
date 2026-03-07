@@ -9,7 +9,7 @@ The canonical threat model and v1 security invariants live in [ADR 0001: Agent-s
 - provider: GitHub
 - operation: `github.create_issue`
 - `SecretRef`: opaque identity in the form `secretref:v1:<backend>:<id>`
-- supported refs: `kxxx`-managed `secretref:v1:keychain:<id>` for CLI-visible flows and `secretref:v1:memory:<id>` for tests/internal spikes
+- supported refs: `kxxx`-managed `secretref:v1:keychain:<id>` and `secretref:v1:encrypted-file:<id>` for CLI-visible flows, plus `secretref:v1:memory:<id>` for tests/internal spikes
 - minimum policy gate: provider must be `github`, operation must be `create_issue`, and repo must be allowlisted
 - minimal audit trail: sanitized structured broker events with no raw secret material
 
@@ -32,8 +32,8 @@ Supported entrypoint:
 
 `kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]`
 
-- `--service` is required for `secretref:v1:keychain:<id>` refs and optional for `secretref:v1:memory:<id>` refs
-- `--ref` is required and may be a `secretref:v1:keychain:<id>` from `kxxx ref <descriptor> --service <name>` or a `secretref:v1:memory:<id>` for tests and internal spikes
+- `--service` is required for persistent backend refs such as `secretref:v1:keychain:<id>` and `secretref:v1:encrypted-file:<id>`, and optional for `secretref:v1:memory:<id>` refs
+- `--ref` is required and may be a `secretref:v1:keychain:<id>` or `secretref:v1:encrypted-file:<id>` from `kxxx ref <descriptor> --service <name>`, or a `secretref:v1:memory:<id>` for tests and internal spikes
 - `--repo` is required and identifies the target repository in `owner/repo` form
 - `--title` is required
 - `--body` is optional
@@ -74,6 +74,7 @@ Proof-oriented coverage lives in `test/broker.bats` and should continue to verif
 ## Current Limitations
 
 - keychain-backed refs are broker-usable when they exist in the local secret index created by `kxxx set` or `migrate import --apply`, and the caller supplies the matching `--service`
+- encrypted-file-backed refs are broker-usable when they exist in the local secret index and `KXXX_ENCRYPTED_FILE_KEY` is available to the brokered process
 - the in-memory backend remains process-local for tests and internal APIs
 - the safe path is limited to GitHub issue creation
 - policy configuration is intentionally minimal and loaded from `~/.config/kxxx/broker/github.create_issue.repos`
