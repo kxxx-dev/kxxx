@@ -57,23 +57,23 @@ _kxxx() {
       if [[ -z "$broker_op" ]]; then
         local -a broker_ops=(
           'github.create_issue:create a GitHub issue via safe path'
-          'audit:export structured broker audit JSONL'
+          'audit:export structured broker audit events'
         )
         _describe 'broker operation' broker_ops
         return
       fi
       case "$broker_op" in
+        audit)
+          _arguments \
+            '--file[audit log file path]:path:_files' \
+            '(-h --help)'{-h,--help}'[show help]'
+          ;;
         github.create_issue)
           _arguments \
             '--ref[opaque secret reference]:secret-ref:' \
             '--repo[target repository]:repository:' \
             '--title[issue title]:title:' \
             '--body[issue body]:body:' \
-            '(-h --help)'{-h,--help}'[show help]'
-          ;;
-        audit)
-          _arguments \
-            '--file[structured broker audit file]:path:_files' \
             '(-h --help)'{-h,--help}'[show help]'
           ;;
       esac
