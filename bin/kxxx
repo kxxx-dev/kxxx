@@ -65,7 +65,7 @@ USAGE
 }
 
 cmd_set() {
-  local service="${KXXX_DEFAULT_SERVICE}" backend="auto" output="text" account="" mode="prompt" value=""
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account="" mode="prompt" value=""
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -141,7 +141,7 @@ USAGE
 }
 
 cmd_ref() {
-  local service="${KXXX_DEFAULT_SERVICE}" backend="auto" output="text" account="" resolved_ref=""
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account="" resolved_ref=""
   local backend_explicit=0
   while (($# > 0)); do
     case "$1" in
@@ -208,7 +208,7 @@ USAGE
 }
 
 cmd_get() {
-  local service="${KXXX_DEFAULT_SERVICE}" backend="auto" fallback_service="" account=""
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" fallback_service="" account=""
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -302,7 +302,7 @@ USAGE
 }
 
 cmd_list() {
-  local service="${KXXX_DEFAULT_SERVICE}" backend="auto" output="text" account
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account
   while (($# > 0)); do
     case "$1" in
       --service)

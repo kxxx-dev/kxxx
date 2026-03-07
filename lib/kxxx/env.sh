@@ -80,7 +80,7 @@ kxxx_emit_env() {
 }
 
 kxxx_env_main() {
-  local repo="auto" shell="zsh" service="${KXXX_DEFAULT_SERVICE}" backend="auto" strict=0
+  local repo="auto" shell="zsh" service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" strict=0
   while (($# > 0)); do
     case "$1" in
       --repo)
@@ -150,7 +150,7 @@ USAGE
 }
 
 kxxx_run_main() {
-  local repo="auto" service="${KXXX_DEFAULT_SERVICE}" backend="auto"
+  local repo="auto" service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}"
   while (($# > 0)); do
     case "$1" in
       --repo)

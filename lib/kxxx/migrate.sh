@@ -91,7 +91,7 @@ kxxx_migrate_collect_import_accounts() {
 }
 
 kxxx_migrate_import_main() {
-  local mode="dry-run" service="${KXXX_DEFAULT_SERVICE}" backend="auto" keys_root="${HOME}/src/keys"
+  local mode="dry-run" service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" keys_root="${HOME}/src/keys"
   while (($# > 0)); do
     case "$1" in
       --dry-run)
