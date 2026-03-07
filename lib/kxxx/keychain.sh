@@ -106,3 +106,31 @@ kxxx_keychain_list_accounts() {
 
   kxxx_die "required command not found: security (or ks)"
 }
+
+kxxx_keychain_account_for_ref() {
+  local ref="$1"
+  local backend="" id=""
+
+  if ! kxxx_secret_ref_parse "$ref" backend id; then
+    return 1
+  fi
+
+  [[ "$backend" == "keychain" ]] || return 1
+  printf 'ref/%s\n' "$id"
+}
+
+kxxx_keychain_set_ref() {
+  local service="$1" ref="$2" value="$3"
+  local account=""
+
+  account="$(kxxx_keychain_account_for_ref "$ref")" || kxxx_die "invalid keychain SecretRef: $ref"
+  kxxx_keychain_set "$service" "$account" "$value"
+}
+
+kxxx_keychain_get_ref() {
+  local service="$1" ref="$2"
+  local account=""
+
+  account="$(kxxx_keychain_account_for_ref "$ref")" || return 1
+  kxxx_keychain_get "$service" "$account"
+}
