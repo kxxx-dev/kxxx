@@ -330,7 +330,7 @@ kxxx_identity_collect_env_map() {
     [[ "$rec_scope" == "global" ]] || continue
     [[ -n "$rec_name" ]] || continue
 
-    owned_ref["$rec_name"]=1
+    owned_ref["global:$rec_name"]=1
     if account="$(kxxx_identity_account_for_ref "$rec_ref")" && value="$(kxxx_keychain_get "$service" "$account")"; then
       env_ref["$rec_name"]="$value"
     fi
@@ -345,7 +345,7 @@ kxxx_identity_collect_env_map() {
     [[ "$rec_repo" == "$repo" ]] || continue
     [[ -n "$rec_name" ]] || continue
 
-    owned_ref["$rec_name"]=1
+    owned_ref["repo:$rec_repo:$rec_name"]=1
     if account="$(kxxx_identity_account_for_ref "$rec_ref")" && value="$(kxxx_keychain_get "$service" "$account")"; then
       env_ref["$rec_name"]="$value"
     fi

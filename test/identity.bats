@@ -82,7 +82,7 @@ test_stale_indexed_refs_do_not_fall_back_to_legacy_direct_accounts() { #@test
   [ "$status" -eq 0 ]
 
   seed_legacy_account test.secrets env/OPENAI_API_KEY legacy-shadow
-  awk -F '\t' '!($1 == "test.secrets" && $2 ~ /^ref\\//)' "$KXXX_TEST_SECURITY_STORE" > "$KXXX_TEST_SECURITY_STORE.tmp"
+  awk -F '\t' '!($1 == "test.secrets" && index($2, "ref/") == 1)' "$KXXX_TEST_SECURITY_STORE" > "$KXXX_TEST_SECURITY_STORE.tmp"
   mv "$KXXX_TEST_SECURITY_STORE.tmp" "$KXXX_TEST_SECURITY_STORE"
 
   run_kxxx get env/OPENAI_API_KEY --service test.secrets
@@ -125,6 +125,21 @@ test_env_and_run_use_indexed_bindings_first_and_legacy_bindings_as_fallback() { 
   run_kxxx run --service test.secrets --repo demo -- /bin/sh -c 'printf "%s|%s|%s" "${GLOBAL_TOKEN:-}" "${REPO_TOKEN:-}" "${LEGACY_ONLY:-}"'
   [ "$status" -eq 0 ]
   [ "$output" = "indexed-global|indexed-repo|legacy-only" ]
+}
+
+test_legacy_repo_bindings_override_indexed_globals_when_no_indexed_repo_binding_exists() { #@test
+  run_kxxx set env/SHARED_TOKEN --service test.secrets --value indexed-global
+  [ "$status" -eq 0 ]
+
+  seed_legacy_account test.secrets app/demo/SHARED_TOKEN legacy-repo
+
+  run_kxxx env --service test.secrets --repo demo --shell json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"SHARED_TOKEN":"legacy-repo"'* ]]
+
+  run_kxxx run --service test.secrets --repo demo -- /bin/sh -c 'printf "%s" "${SHARED_TOKEN:-}"'
+  [ "$status" -eq 0 ]
+  [ "$output" = "legacy-repo" ]
 }
 
 test_migrate_import_apply_writes_imported_secrets_through_opaque_refs_instead_of_raw_env_accounts() { #@test

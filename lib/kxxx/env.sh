@@ -6,6 +6,7 @@ kxxx_collect_env_map() {
   local -a accounts=()
   declare -A owned_bindings=()
   local account name value
+  local global_key repo_key
 
   kxxx_identity_collect_env_map "$service" "$repo" out_ref owned_bindings
   mapfile -t accounts < <(kxxx_keychain_list_accounts "$service")
@@ -13,7 +14,10 @@ kxxx_collect_env_map() {
   for account in "${accounts[@]}"; do
     if [[ "$account" =~ ^env/([A-Za-z_][A-Za-z0-9_]*)$ ]]; then
       name="${BASH_REMATCH[1]}"
-      [[ -n "${owned_bindings[$name]+x}" ]] && continue
+      global_key="global:$name"
+      repo_key="repo:$repo:$name"
+      [[ -n "${owned_bindings[$global_key]+x}" ]] && continue
+      [[ -n "${owned_bindings[$repo_key]+x}" ]] && continue
       if value="$(kxxx_keychain_get "$service" "$account")"; then
         out_ref["$name"]="$value"
       fi
@@ -24,7 +28,8 @@ kxxx_collect_env_map() {
     if [[ "$account" =~ ^app/([^/]+)/([A-Za-z_][A-Za-z0-9_]*)$ ]]; then
       if [[ "${BASH_REMATCH[1]}" == "$repo" ]]; then
         name="${BASH_REMATCH[2]}"
-        [[ -n "${owned_bindings[$name]+x}" ]] && continue
+        repo_key="repo:$repo:$name"
+        [[ -n "${owned_bindings[$repo_key]+x}" ]] && continue
         if value="$(kxxx_keychain_get "$service" "$account")"; then
           out_ref["$name"]="$value"
         fi
