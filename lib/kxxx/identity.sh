@@ -244,11 +244,19 @@ kxxx_identity_get_descriptor() {
   local service="$1" descriptor="$2" backend="${3:-auto}"
   local -n value_ref="$4"
   local ref="" existing_descriptor="" binding_scope="" binding_repo="" binding_name=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
 
   value_ref=""
 
   if ! kxxx_identity_find_record_by_descriptor "$service" "$descriptor" ref existing_descriptor binding_scope binding_repo binding_name; then
     return 1
+  fi
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+  kxxx_secret_ref_parse "$ref" ref_backend ref_id || return 2
+  ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || return 2
+  if [[ "$ref_impl_backend" != "$resolved_backend" ]]; then
+    return 2
   fi
 
   if ! value_ref="$(kxxx_backend_get_ref "$service" "$ref")"; then
@@ -321,7 +329,10 @@ kxxx_identity_collect_env_map() {
   local index_file=""
   local line=""
   local rec_service="" rec_ref="" rec_descriptor="" rec_scope="" rec_repo="" rec_name=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
   local value=""
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
 
   index_file="$(kxxx_identity_index_file)"
   [[ -f "$index_file" ]] || return 0
@@ -335,6 +346,9 @@ kxxx_identity_collect_env_map() {
     [[ -n "$rec_name" ]] || continue
 
     owned_ref["global:$rec_name"]=1
+    kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
+    [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
     if value="$(kxxx_backend_get_ref "$service" "$rec_ref")"; then
       env_ref["$rec_name"]="$value"
     fi
@@ -350,6 +364,9 @@ kxxx_identity_collect_env_map() {
     [[ -n "$rec_name" ]] || continue
 
     owned_ref["repo:$rec_repo:$rec_name"]=1
+    kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
+    [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
     if value="$(kxxx_backend_get_ref "$service" "$rec_ref")"; then
       env_ref["$rec_name"]="$value"
     fi
