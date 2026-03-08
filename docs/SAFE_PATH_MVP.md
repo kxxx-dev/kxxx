@@ -2,7 +2,7 @@
 
 This slice adds the first brokered safe path to `kxxx` without changing the legacy compatibility commands.
 
-The canonical threat model and v1 security invariants live in [ADR 0001: Agent-safe secret runtime](adr/0001-agent-safe-secret-runtime.md). This brief is intentionally narrower: it describes the current MVP boundary and should not be treated as the source of truth for broader security policy or long-term non-goals.
+The canonical threat model and v1 security invariants live in [ADR 0001: Agent-safe secret runtime](adr/0001-agent-safe-secret-runtime.md). The broader contributor-facing product story lives in the repository [README](../README.md). This brief is intentionally narrower: it describes only the current MVP boundary and should not be treated as the source of truth for broader product positioning, security policy, or long-term non-goals.
 
 ## What It Adds
 
@@ -19,8 +19,7 @@ The caller provides only a `SecretRef` plus the brokered operation arguments.
 `kxxx` checks policy at the broker boundary, resolves the raw secret internally, and performs the provider call behind that boundary.
 The broker result and structured audit events never include the raw secret.
 
-This MVP implements the ADR invariants that the safe path keeps raw secret material behind the broker boundary, treats compatibility-path commands as explicit exceptions, and evaluates policy before secret resolution when policy exists.
-Compatibility-path commands still exist, but they are not part of this safe-path boundary.
+This MVP implements the ADR invariants that the safe path keeps raw secret material behind the broker boundary, treats compatibility-path commands as explicit exceptions, and evaluates policy before secret resolution when policy exists. Compatibility-path commands still exist, but they are not part of this safe-path boundary.
 
 `kxxx broker audit` exports the broker runtime JSONL log from `~/.local/state/kxxx/broker.audit.jsonl` by default.
 If `KXXX_BROKER_AUDIT_LOG` or `--file <path>` is provided, that path is used instead.
