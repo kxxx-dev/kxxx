@@ -106,6 +106,9 @@ seed_keychain_account() {
   run_kxxx_keychain_override get env/OVERRIDE_TOKEN --service test.secrets --backend darwin-keychain
   [ "$status" -eq 0 ]
   [ "$output" = "from-keychain" ]
+
+  run_kxxx_keychain_override ref env/OVERRIDE_TOKEN --service test.secrets
+  [ "$status" -ne 0 ]
 }
 
 @test "read flows enforce the selected backend for indexed descriptors" {
@@ -118,6 +121,19 @@ seed_keychain_account() {
   run_kxxx_linux_encrypted env --service test.secrets --repo demo --backend encrypted-file --shell json
   [ "$status" -eq 0 ]
   [[ "$output" != *"ISOLATED_TOKEN"* ]]
+}
+
+@test "list filters indexed descriptors to the selected backend" {
+  run_kxxx_keychain_override set env/KEYCHAIN_ONLY --service test.secrets --backend darwin-keychain --value keychain-value
+  [ "$status" -eq 0 ]
+
+  run_kxxx_linux_encrypted set env/ENCRYPTED_ONLY --service test.secrets --backend encrypted-file --value encrypted-value
+  [ "$status" -eq 0 ]
+
+  run_kxxx_linux_encrypted list --service test.secrets --backend encrypted-file --json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"ENCRYPTED_ONLY"'* || "$output" == *'"env/ENCRYPTED_ONLY"'* ]]
+  [[ "$output" != *'"KEYCHAIN_ONLY"'* ]]
 }
 
 @test "resetting an existing descriptor honors a new backend selection" {

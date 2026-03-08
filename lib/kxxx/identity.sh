@@ -296,6 +296,33 @@ kxxx_identity_list_descriptors() {
   done < "$index_file"
 }
 
+kxxx_identity_list_descriptors_for_backend() {
+  local service="$1" backend="$2"
+  local index_file=""
+  local line=""
+  local rec_service="" rec_ref="" rec_descriptor="" rec_scope="" rec_repo="" rec_name=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
+  declare -A seen_descriptors=()
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+  index_file="$(kxxx_identity_index_file)"
+  [[ -f "$index_file" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if ! kxxx_identity_parse_record_line "$line" rec_service rec_ref rec_descriptor rec_scope rec_repo rec_name; then
+      continue
+    fi
+    [[ "$rec_service" == "$service" ]] || continue
+    [[ -n "$rec_descriptor" ]] || continue
+    kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
+    [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
+    [[ -n "${seen_descriptors[$rec_descriptor]+x}" ]] && continue
+    seen_descriptors["$rec_descriptor"]=1
+    printf '%s\n' "$rec_descriptor"
+  done < "$index_file"
+}
+
 kxxx_identity_account_is_managed_ref() {
   local service="$1" account="$2"
   local index_file="" line=""

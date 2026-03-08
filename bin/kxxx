@@ -142,7 +142,8 @@ USAGE
 
 cmd_ref() {
   local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account="" resolved_ref=""
-  local backend_explicit=0
+  local backend_selected=0
+  [[ -n "${KXXX_BACKEND:-}" ]] && backend_selected=1
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -158,12 +159,12 @@ cmd_ref() {
         shift
         [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
         backend="$1"
-        backend_explicit=1
+        backend_selected=1
         ;;
       --backend=*)
         backend="${1#*=}"
         [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
-        backend_explicit=1
+        backend_selected=1
         ;;
       --json)
         output="json"
@@ -188,7 +189,7 @@ USAGE
   [[ -n "$account" ]] || kxxx_die "account is required"
   kxxx_identity_get_descriptor_ref "$service" "$account" resolved_ref || return 1
 
-  if [[ "$backend_explicit" -eq 1 ]]; then
+  if [[ "$backend_selected" -eq 1 ]]; then
     local selected_backend="" ref_backend="" ref_impl_backend="" ref_id=""
     selected_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
     kxxx_secret_ref_parse "$resolved_ref" ref_backend ref_id || return 1
@@ -303,6 +304,8 @@ USAGE
 
 cmd_list() {
   local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account
+  local backend_selected=0
+  [[ -n "${KXXX_BACKEND:-}" ]] && backend_selected=1
   while (($# > 0)); do
     case "$1" in
       --service)
@@ -318,10 +321,12 @@ cmd_list() {
         shift
         [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
         backend="$1"
+        backend_selected=1
         ;;
       --backend=*)
         backend="${1#*=}"
         [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        backend_selected=1
         ;;
       --json)
         output="json"
@@ -347,7 +352,11 @@ USAGE
   declare -A seen_accounts=()
 
   resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
-  mapfile -t indexed_accounts < <(kxxx_identity_list_descriptors "$service")
+  if [[ "$backend_selected" -eq 1 ]]; then
+    mapfile -t indexed_accounts < <(kxxx_identity_list_descriptors_for_backend "$service" "$backend")
+  else
+    mapfile -t indexed_accounts < <(kxxx_identity_list_descriptors "$service")
+  fi
   mapfile -t direct_accounts < <(kxxx_backend_list_accounts "$resolved_backend" "$service")
 
   for account in "${indexed_accounts[@]}"; do
