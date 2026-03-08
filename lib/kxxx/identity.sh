@@ -372,10 +372,10 @@ kxxx_identity_collect_env_map() {
     [[ "$rec_scope" == "global" ]] || continue
     [[ -n "$rec_name" ]] || continue
 
-    owned_ref["global:$rec_name"]=1
     kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
     ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
     [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
+    owned_ref["global:$rec_name"]=1
     if value="$(kxxx_backend_get_ref "$service" "$rec_ref")"; then
       env_ref["$rec_name"]="$value"
     fi
@@ -390,10 +390,10 @@ kxxx_identity_collect_env_map() {
     [[ "$rec_repo" == "$repo" ]] || continue
     [[ -n "$rec_name" ]] || continue
 
-    owned_ref["repo:$rec_repo:$rec_name"]=1
     kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
     ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
     [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
+    owned_ref["repo:$rec_repo:$rec_name"]=1
     if value="$(kxxx_backend_get_ref "$service" "$rec_ref")"; then
       env_ref["$rec_name"]="$value"
     fi

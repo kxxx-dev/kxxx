@@ -54,6 +54,26 @@ seed_keychain_account() {
   printf '%s\t%s\t%s\n' "$service" "$account" "$value" >> "$KXXX_TEST_SECURITY_STORE"
 }
 
+seed_encrypted_file_account() {
+  local service="$1" account="$2" value="$3"
+  local old_home="$HOME"
+  local old_key="${KXXX_ENCRYPTED_FILE_KEY-}"
+  local plaintext=""
+
+  export HOME="$KXXX_TEST_HOME"
+  export KXXX_ENCRYPTED_FILE_KEY="test-master-key"
+  plaintext="$(mktemp)"
+  printf '%s\t%s\t%s\n' "$service" "$account" "$(kxxx_backend_base64_encode "$value")" > "$plaintext"
+  kxxx_backend_encrypted_file_encrypt_from "$plaintext"
+  rm -f "$plaintext"
+  export HOME="$old_home"
+  if [[ -n "$old_key" ]]; then
+    export KXXX_ENCRYPTED_FILE_KEY="$old_key"
+  else
+    unset KXXX_ENCRYPTED_FILE_KEY
+  fi
+}
+
 @test "memory backend remains available for same-process dispatcher tests" {
   local ref=""
 
@@ -121,6 +141,23 @@ seed_keychain_account() {
   run_kxxx_linux_encrypted env --service test.secrets --repo demo --backend encrypted-file --shell json
   [ "$status" -eq 0 ]
   [[ "$output" != *"ISOLATED_TOKEN"* ]]
+}
+
+@test "direct account fallback still works when indexed refs exist on other backends" {
+  run_kxxx_keychain_override set env/FALLBACK_TOKEN --service test.secrets --backend darwin-keychain --value keychain-value
+  [ "$status" -eq 0 ]
+
+  seed_encrypted_file_account test.secrets env/FALLBACK_TOKEN_DIRECT encrypted-direct
+  run_kxxx_keychain_override set env/FALLBACK_TOKEN_DIRECT --service test.secrets --backend darwin-keychain --value keychain-shadow
+  [ "$status" -eq 0 ]
+
+  run_kxxx_linux_encrypted env --service test.secrets --repo demo --backend encrypted-file --shell json
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"FALLBACK_TOKEN_DIRECT":"encrypted-direct"'* ]]
+
+  run_kxxx_linux_encrypted run --service test.secrets --repo demo --backend encrypted-file -- /bin/sh -c 'printf "%s" "${FALLBACK_TOKEN_DIRECT:-}"'
+  [ "$status" -eq 0 ]
+  [ "$output" = "encrypted-direct" ]
 }
 
 @test "list filters indexed descriptors to the selected backend" {
