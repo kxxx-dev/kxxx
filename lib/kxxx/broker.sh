@@ -278,7 +278,7 @@ kxxx_broker_execute_github_create_issue() {
   local service="$1" ref="$2" repo="$3" title="$4" body="$5"
   local token="" provider="github" operation="create_issue"
   local response="" http_status="" issue_number="" issue_url=""
-  local sink="" request_id="" backend="" audit_ref=""
+  local sink="" request_id="" backend="" impl_backend="" audit_ref=""
   local policy_decision="" policy_reason="" policy_rule="" policy_source=""
   local extra_fields=""
 
@@ -320,6 +320,9 @@ kxxx_broker_execute_github_create_issue() {
   fi
 
   backend="$(kxxx_broker_secret_backend_for_ref "$ref")"
+  if ! impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$backend" 2>/dev/null)"; then
+    impl_backend="unknown"
+  fi
   extra_fields="$(printf '"backend":"%s","result":"attempted"' \
     "$(kxxx_json_escape "$backend")")"
   if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_backend_access" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
@@ -327,29 +330,18 @@ kxxx_broker_execute_github_create_issue() {
     return 1
   fi
 
-  if [[ "$backend" == "keychain" ]]; then
-    if [[ -z "$service" ]]; then
-      extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"service_required_for_keychain_ref"' \
-        "$(kxxx_json_escape "$backend")")"
-      if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
-        echo "kxxx: broker audit log write failed" >&2
-        return 1
-      fi
-      echo "kxxx: --service is required for keychain secret refs" >&2
+  if [[ "$impl_backend" != "memory" && "$impl_backend" != "unknown" && -z "$service" ]]; then
+    extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"service_required_for_backend_ref"' \
+      "$(kxxx_json_escape "$backend")")"
+    if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+      echo "kxxx: broker audit log write failed" >&2
       return 1
     fi
+    echo "kxxx: --service is required for backend-managed secret refs" >&2
+    return 1
+  fi
 
-    if ! token="$(kxxx_keychain_get_ref "$service" "$ref")"; then
-      extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"secret_ref_unresolved"' \
-        "$(kxxx_json_escape "$backend")")"
-      if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
-        echo "kxxx: broker audit log write failed" >&2
-        return 1
-      fi
-      echo "kxxx: secret ref could not be resolved" >&2
-      return 1
-    fi
-  elif ! kxxx_secret_resolve "$ref" token; then
+  if ! token="$(kxxx_backend_get_ref "$service" "$ref")"; then
     extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"secret_ref_unresolved"' \
       "$(kxxx_json_escape "$backend")")"
     if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then

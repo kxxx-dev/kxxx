@@ -30,7 +30,7 @@ kxxx_secret_ref_parse() {
   local -n backend_ref="$2"
   local -n id_ref="$3"
 
-  if [[ "$ref" =~ ^secretref:v1:([a-z0-9_]+):([A-Za-z0-9._-]+)$ ]]; then
+  if [[ "$ref" =~ ^secretref:v1:([a-z0-9_-]+):([A-Za-z0-9._-]+)$ ]]; then
     backend_ref="${BASH_REMATCH[1]}"
     id_ref="${BASH_REMATCH[2]}"
     return 0
@@ -71,7 +71,7 @@ kxxx_secret_resolve() {
   case "$backend" in
     memory)
       declare -p KXXX_MEMORY_SECRET_STORE >/dev/null 2>&1 || return 1
-      [[ -v "KXXX_MEMORY_SECRET_STORE[$id]" ]] || return 1
+      [[ -n "${KXXX_MEMORY_SECRET_STORE[$id]+x}" ]] || return 1
       value_ref="${KXXX_MEMORY_SECRET_STORE[$id]}"
       return 0
       ;;

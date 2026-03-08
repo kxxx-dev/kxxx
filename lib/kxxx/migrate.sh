@@ -91,7 +91,7 @@ kxxx_migrate_collect_import_accounts() {
 }
 
 kxxx_migrate_import_main() {
-  local mode="dry-run" service="${KXXX_DEFAULT_SERVICE}" keys_root="${HOME}/src/keys"
+  local mode="dry-run" service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" keys_root="${HOME}/src/keys"
   while (($# > 0)); do
     case "$1" in
       --dry-run)
@@ -109,6 +109,15 @@ kxxx_migrate_import_main() {
         service="${1#*=}"
         [[ -n "$service" ]] || kxxx_die "missing value for --service"
         ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
       --keys-root)
         shift
         [[ $# -gt 0 ]] || kxxx_die "missing value for --keys-root"
@@ -120,7 +129,7 @@ kxxx_migrate_import_main() {
         ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx migrate import [--dry-run|--apply] [--service <name>] [--keys-root <path>]
+Usage: kxxx migrate import [--dry-run|--apply] [--service <name>] [--backend <name>] [--keys-root <path>]
 USAGE
         return 0
         ;;
@@ -137,8 +146,11 @@ USAGE
 
   local i account value found
   local ready=0 missing=0
+  local resolved_backend=""
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
   echo "Mode: $mode"
   echo "Service: $service"
+  echo "Backend: $resolved_backend"
 
   for account in "${kxxx_migrate_required_accounts[@]}"; do
     found=0
@@ -170,7 +182,7 @@ USAGE
       account="${accounts[$i]}"
       value="${values[$i]}"
       [[ -n "$value" && "$value" != KEYCHAIN_REF:* ]] || continue
-      if kxxx_identity_store_descriptor "$service" "$account" "$value"; then
+      if kxxx_identity_store_descriptor "$service" "$account" "$value" "$resolved_backend"; then
         imported=$((imported + 1))
         echo "[IMPORTED] $account"
       else
@@ -185,6 +197,7 @@ USAGE
 
 kxxx_migrate_service_main() {
   local mode="dry-run" from_service="nil.secrets" to_service="${KXXX_DEFAULT_SERVICE}"
+  local from_backend="auto" to_backend="auto"
   while (($# > 0)); do
     case "$1" in
       --dry-run)
@@ -211,9 +224,27 @@ kxxx_migrate_service_main() {
         to_service="${1#*=}"
         [[ -n "$to_service" ]] || kxxx_die "missing value for --to"
         ;;
+      --from-backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --from-backend"
+        from_backend="$1"
+        ;;
+      --from-backend=*)
+        from_backend="${1#*=}"
+        [[ -n "$from_backend" ]] || kxxx_die "missing value for --from-backend"
+        ;;
+      --to-backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --to-backend"
+        to_backend="$1"
+        ;;
+      --to-backend=*)
+        to_backend="${1#*=}"
+        [[ -n "$to_backend" ]] || kxxx_die "missing value for --to-backend"
+        ;;
       -h|--help)
         cat <<'USAGE'
-Usage: kxxx migrate service [--from nil.secrets] [--to kxxx.secrets] [--dry-run|--apply]
+Usage: kxxx migrate service [--from nil.secrets] [--to kxxx.secrets] [--from-backend <name>] [--to-backend <name>] [--dry-run|--apply]
 USAGE
         return 0
         ;;
@@ -224,17 +255,23 @@ USAGE
     shift || true
   done
 
-  mapfile -t accounts < <(kxxx_keychain_list_accounts "$from_service")
+  local resolved_from_backend="" resolved_to_backend=""
+  resolved_from_backend="$(kxxx_backend_resolve_cli_name "$from_backend")" || return 1
+  resolved_to_backend="$(kxxx_backend_resolve_cli_name "$to_backend")" || return 1
+
+  mapfile -t accounts < <(kxxx_backend_list_accounts "$resolved_from_backend" "$from_service")
   echo "Mode: $mode"
   echo "From: $from_service"
   echo "To: $to_service"
+  echo "From backend: $resolved_from_backend"
+  echo "To backend: $resolved_to_backend"
   echo "Accounts: ${#accounts[@]}"
 
   local account value copied=0 failed=0
   for account in "${accounts[@]}"; do
     echo "  [PLAN] $account"
     if [[ "$mode" == "apply" ]]; then
-      if value="$(kxxx_keychain_get "$from_service" "$account")" && kxxx_keychain_set "$to_service" "$account" "$value"; then
+      if value="$(kxxx_backend_get_account "$resolved_from_backend" "$from_service" "$account")" && kxxx_backend_set_account "$resolved_to_backend" "$to_service" "$account" "$value"; then
         copied=$((copied + 1))
       else
         failed=$((failed + 1))

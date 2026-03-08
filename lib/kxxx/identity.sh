@@ -16,32 +16,20 @@ kxxx_identity_prepare_index_file() {
   chmod 600 "$index_file" 2>/dev/null || true
 }
 
+kxxx_identity_create_ref_for_backend() {
+  local backend="$1" id="${2:-}"
+  local resolved_backend=""
+
+  resolved_backend="$(kxxx_backend_resolve_name "$backend")" || return 1
+  kxxx_backend_create_ref "$resolved_backend" "$id"
+}
+
 kxxx_identity_create_keychain_ref() {
-  local id="${1:-}"
-
-  if [[ -n "$id" ]]; then
-    kxxx_secret_ref_create "keychain" "$id"
-    return 0
-  fi
-
-  kxxx_secret_ref_create "keychain"
+  kxxx_identity_create_ref_for_backend "darwin-keychain" "${1:-}"
 }
 
 kxxx_identity_account_for_ref() {
-  local ref="$1"
-  local backend="" id=""
-
-  if declare -F kxxx_keychain_account_for_ref >/dev/null 2>&1; then
-    kxxx_keychain_account_for_ref "$ref"
-    return $?
-  fi
-
-  if ! kxxx_secret_ref_parse "$ref" backend id; then
-    return 1
-  fi
-
-  [[ "$backend" == "keychain" ]] || return 1
-  printf 'ref/%s\n' "$id"
+  kxxx_backend_ref_account "$1"
 }
 
 kxxx_identity_parse_binding_descriptor() {
@@ -221,27 +209,28 @@ kxxx_identity_upsert_record() {
 }
 
 kxxx_identity_set_descriptor() {
-  local service="$1" descriptor="$2" value="$3" out_var="${4:-}"
+  local service="$1" descriptor="$2" value="$3" backend="${4:-auto}" out_var="${5:-}"
   local ref="" existing_descriptor="" binding_scope="" binding_repo="" binding_name=""
-  local account=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
 
   if kxxx_identity_find_record_by_descriptor "$service" "$descriptor" ref existing_descriptor binding_scope binding_repo binding_name; then
-    if ! account="$(kxxx_identity_account_for_ref "$ref")"; then
-      ref=""
+    if kxxx_secret_ref_parse "$ref" ref_backend ref_id; then
+      ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || return 1
+      if [[ "$ref_impl_backend" != "$resolved_backend" ]]; then
+        ref="$(kxxx_identity_create_ref_for_backend "$resolved_backend")" || return 1
+      fi
+    else
+      ref="$(kxxx_identity_create_ref_for_backend "$resolved_backend")" || return 1
     fi
   fi
 
   if [[ -z "$ref" ]]; then
-    ref="$(kxxx_identity_create_keychain_ref)" || return 1
-    account="$(kxxx_identity_account_for_ref "$ref")" || return 1
+    ref="$(kxxx_identity_create_ref_for_backend "$resolved_backend")" || return 1
   fi
 
-  if declare -F kxxx_keychain_set_ref >/dev/null 2>&1; then
-    kxxx_keychain_set_ref "$service" "$ref" "$value" || return 1
-  else
-    kxxx_keychain_set "$service" "$account" "$value" || return 1
-  fi
-
+  kxxx_backend_set_ref "$service" "$ref" "$value" || return 1
   kxxx_identity_parse_binding_descriptor "$descriptor" binding_scope binding_repo binding_name || true
   kxxx_identity_upsert_record "$service" "$ref" "$descriptor" "$binding_scope" "$binding_repo" "$binding_name" || return 1
 
@@ -252,10 +241,10 @@ kxxx_identity_set_descriptor() {
 }
 
 kxxx_identity_get_descriptor() {
-  local service="$1" descriptor="$2"
-  local -n value_ref="$3"
+  local service="$1" descriptor="$2" backend="${3:-auto}"
+  local -n value_ref="$4"
   local ref="" existing_descriptor="" binding_scope="" binding_repo="" binding_name=""
-  local account=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
 
   value_ref=""
 
@@ -263,22 +252,19 @@ kxxx_identity_get_descriptor() {
     return 1
   fi
 
-  if declare -F kxxx_keychain_get_ref >/dev/null 2>&1; then
-    if ! value_ref="$(kxxx_keychain_get_ref "$service" "$ref")"; then
-      value_ref=""
-      return 2
-    fi
-    return 0
-  fi
-
-  if ! account="$(kxxx_identity_account_for_ref "$ref")"; then
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+  kxxx_secret_ref_parse "$ref" ref_backend ref_id || return 2
+  ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || return 2
+  if [[ "$ref_impl_backend" != "$resolved_backend" ]]; then
     return 2
   fi
 
-  if ! value_ref="$(kxxx_keychain_get "$service" "$account")"; then
+  if ! value_ref="$(kxxx_backend_get_ref "$service" "$ref")"; then
     value_ref=""
     return 2
   fi
+
+  return 0
 }
 
 kxxx_identity_has_descriptor() {
@@ -310,26 +296,70 @@ kxxx_identity_list_descriptors() {
   done < "$index_file"
 }
 
+kxxx_identity_list_descriptors_for_backend() {
+  local service="$1" backend="$2"
+  local index_file=""
+  local line=""
+  local rec_service="" rec_ref="" rec_descriptor="" rec_scope="" rec_repo="" rec_name=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
+  declare -A seen_descriptors=()
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+  index_file="$(kxxx_identity_index_file)"
+  [[ -f "$index_file" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if ! kxxx_identity_parse_record_line "$line" rec_service rec_ref rec_descriptor rec_scope rec_repo rec_name; then
+      continue
+    fi
+    [[ "$rec_service" == "$service" ]] || continue
+    [[ -n "$rec_descriptor" ]] || continue
+    kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
+    [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
+    [[ -n "${seen_descriptors[$rec_descriptor]+x}" ]] && continue
+    seen_descriptors["$rec_descriptor"]=1
+    printf '%s\n' "$rec_descriptor"
+  done < "$index_file"
+}
+
 kxxx_identity_account_is_managed_ref() {
   local service="$1" account="$2"
-  local ref="" descriptor="" binding_scope="" binding_repo="" binding_name=""
+  local index_file="" line=""
+  local rec_service="" rec_ref="" rec_descriptor="" rec_scope="" rec_repo="" rec_name=""
+  local ref_id=""
 
   if [[ ! "$account" =~ ^ref/([A-Za-z0-9._-]+)$ ]]; then
     return 1
   fi
 
-  ref="$(kxxx_identity_create_keychain_ref "${BASH_REMATCH[1]}")" || return 1
-  kxxx_identity_find_record_by_ref "$service" "$ref" ref descriptor binding_scope binding_repo binding_name >/dev/null 2>&1
+  ref_id="${BASH_REMATCH[1]}"
+  index_file="$(kxxx_identity_index_file)"
+  [[ -f "$index_file" ]] || return 1
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if ! kxxx_identity_parse_record_line "$line" rec_service rec_ref rec_descriptor rec_scope rec_repo rec_name; then
+      continue
+    fi
+    [[ "$rec_service" == "$service" ]] || continue
+    [[ "$rec_ref" == secretref:v1:*:"$ref_id" ]] || continue
+    return 0
+  done < "$index_file"
+
+  return 1
 }
 
 kxxx_identity_collect_env_map() {
-  local service="$1" repo="$2"
-  local -n env_ref="$3"
-  local -n owned_ref="$4"
+  local service="$1" repo="$2" backend="${3:-auto}"
+  local -n env_ref="$4"
+  local -n owned_ref="$5"
   local index_file=""
   local line=""
   local rec_service="" rec_ref="" rec_descriptor="" rec_scope="" rec_repo="" rec_name=""
-  local account="" value=""
+  local resolved_backend="" ref_backend="" ref_impl_backend="" ref_id=""
+  local value=""
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
 
   index_file="$(kxxx_identity_index_file)"
   [[ -f "$index_file" ]] || return 0
@@ -342,8 +372,11 @@ kxxx_identity_collect_env_map() {
     [[ "$rec_scope" == "global" ]] || continue
     [[ -n "$rec_name" ]] || continue
 
+    kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
+    [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
     owned_ref["global:$rec_name"]=1
-    if account="$(kxxx_identity_account_for_ref "$rec_ref")" && value="$(kxxx_keychain_get "$service" "$account")"; then
+    if value="$(kxxx_backend_get_ref "$service" "$rec_ref")"; then
       env_ref["$rec_name"]="$value"
     fi
   done < "$index_file"
@@ -357,19 +390,22 @@ kxxx_identity_collect_env_map() {
     [[ "$rec_repo" == "$repo" ]] || continue
     [[ -n "$rec_name" ]] || continue
 
+    kxxx_secret_ref_parse "$rec_ref" ref_backend ref_id || continue
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || continue
+    [[ "$ref_impl_backend" == "$resolved_backend" ]] || continue
     owned_ref["repo:$rec_repo:$rec_name"]=1
-    if account="$(kxxx_identity_account_for_ref "$rec_ref")" && value="$(kxxx_keychain_get "$service" "$account")"; then
+    if value="$(kxxx_backend_get_ref "$service" "$rec_ref")"; then
       env_ref["$rec_name"]="$value"
     fi
   done < "$index_file"
 }
 
 kxxx_identity_collect_env_values() {
-  local service="$1" repo="$2"
-  local -n env_ref="$3"
+  local service="$1" repo="$2" backend="${3:-auto}"
+  local -n env_ref="$4"
   declare -A owned_bindings=()
 
-  kxxx_identity_collect_env_map "$service" "$repo" env_ref owned_bindings
+  kxxx_identity_collect_env_map "$service" "$repo" "$backend" env_ref owned_bindings
 }
 
 kxxx_identity_store_descriptor() {
