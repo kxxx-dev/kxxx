@@ -175,3 +175,13 @@ What remains open:
 brew tap kxxx-dev/kxxx
 brew install kxxx
 ```
+
+## Development
+
+- `kxxx` requires Bash 4.3 or later.
+- On macOS, `bats test` can run test files under `/bin/bash` 3.2 because the test shebang uses `#!/usr/bin/env bash`.
+- Prefer `bin/test`, which prepends a compatible Homebrew Bash before invoking `bats`.
+
+```bash
+bin/test
+```

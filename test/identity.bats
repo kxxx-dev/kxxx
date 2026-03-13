@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load ./test_helper.bash
+
 setup() {
   export KXXX_BIN="$BATS_TEST_DIRNAME/../bin/kxxx"
   export KXXX_TEST_HOME="$BATS_TEST_TMPDIR/home"
