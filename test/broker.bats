@@ -503,3 +503,13 @@ EOF
   [[ "$status_code" == "201" ]]
   [[ "$response" == *'"number":7'* ]]
 }
+
+@test "broker.sh resolves sibling modules when sourced through a symlink" {
+  local broker_link="$BATS_TEST_TMPDIR/broker-link.sh"
+
+  ln -s "$ROOT_DIR/lib/kxxx/broker.sh" "$broker_link"
+
+  run bash -lc 'source "$1"' _ "$broker_link"
+
+  [ "$status" -eq 0 ]
+}

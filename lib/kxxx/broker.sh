@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 
-_kxxx_broker_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_kxxx_broker_source_path="${BASH_SOURCE[0]}"
+while [ -L "$_kxxx_broker_source_path" ]; do
+  _kxxx_broker_link_dir="$(cd "$(dirname "$_kxxx_broker_source_path")" && pwd)"
+  _kxxx_broker_source_path="$(readlink "$_kxxx_broker_source_path")"
+  [[ "$_kxxx_broker_source_path" != /* ]] && _kxxx_broker_source_path="${_kxxx_broker_link_dir}/$_kxxx_broker_source_path"
+done
+
+_kxxx_broker_dir="$(cd "$(dirname "$_kxxx_broker_source_path")" && pwd)"
 # shellcheck source=/dev/null
 source "${_kxxx_broker_dir}/provider_github.sh"
 # shellcheck source=/dev/null
 source "${_kxxx_broker_dir}/broker_runtime.sh"
-unset _kxxx_broker_dir
+unset _kxxx_broker_dir _kxxx_broker_link_dir _kxxx_broker_source_path
 
 kxxx_broker_audit_usage() {
   cat <<'USAGE'
