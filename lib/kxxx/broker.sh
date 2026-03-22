@@ -9,9 +9,9 @@ done
 
 _kxxx_broker_dir="$(cd "$(dirname "$_kxxx_broker_source_path")" && pwd)"
 # shellcheck source=/dev/null
-source "${_kxxx_broker_dir}/provider_github.sh"
+source "${_kxxx_broker_dir}/provider_github.sh" || return 1
 # shellcheck source=/dev/null
-source "${_kxxx_broker_dir}/broker_runtime.sh"
+source "${_kxxx_broker_dir}/broker_runtime.sh" || return 1
 unset _kxxx_broker_dir _kxxx_broker_link_dir _kxxx_broker_source_path
 
 kxxx_broker_audit_usage() {
