@@ -104,6 +104,62 @@ kxxx_broker_policy_evaluate_github_create_issue() {
   return 1
 }
 
+kxxx_broker_policy_file_github_create_issue_comment() {
+  local home_dir=""
+  home_dir="$(kxxx_broker_home_dir)"
+  printf '%s/.config/kxxx/broker/github.create_issue_comment.repos\n' "$home_dir"
+}
+
+kxxx_broker_policy_load_github_create_issue_comment_allow_repos() {
+  local policy_file=""
+  local line="" first=1
+
+  policy_file="$(kxxx_broker_policy_file_github_create_issue_comment)"
+  [[ -f "$policy_file" ]] || return 1
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="$(kxxx_trim "$line")"
+    [[ -n "$line" ]] || continue
+    [[ "$line" == \#* ]] && continue
+
+    if [[ $first -eq 0 ]]; then
+      printf ','
+    fi
+    first=0
+    printf '%s' "$line"
+  done < "$policy_file"
+
+  [[ $first -eq 0 ]]
+}
+
+kxxx_broker_policy_evaluate_github_create_issue_comment() {
+  local repo="$1"
+  local -n decision_ref="$2"
+  local -n reason_ref="$3"
+  local -n rule_ref="$4"
+  local -n source_ref="$5"
+  local allowlist=""
+
+  source_ref="$(kxxx_broker_policy_file_github_create_issue_comment)"
+  rule_ref="github.create_issue_comment.repo_allowlist_exact"
+
+  if ! allowlist="$(kxxx_broker_policy_load_github_create_issue_comment_allow_repos)"; then
+    decision_ref="deny"
+    reason_ref="policy_not_configured"
+    return 1
+  fi
+
+  if kxxx_broker_repo_allowed "$repo" "$allowlist"; then
+    decision_ref="allow"
+    reason_ref="repo_allowlist_match"
+    return 0
+  fi
+
+  decision_ref="deny"
+  reason_ref="repo_not_allowlisted"
+  return 1
+}
+
 kxxx_broker_default_audit_log_file() {
   local home_dir=""
   home_dir="$(kxxx_broker_home_dir)"
@@ -321,6 +377,126 @@ kxxx_broker_execute_github_create_issue() {
   fi
   if [[ -n "$issue_url" ]]; then
     printf ',"issue_url":"%s"' "$(kxxx_json_escape "$issue_url")"
+  fi
+  printf '}\n'
+}
+
+kxxx_broker_execute_github_create_issue_comment() {
+  local service="$1" ref="$2" repo="$3" issue_number="$4" body="$5"
+  local token="" provider="github" operation="create_issue_comment"
+  local response="" http_status="" comment_id="" comment_url=""
+  local sink="" request_id="" backend="" impl_backend="" audit_ref=""
+  local policy_decision="" policy_reason="" policy_rule="" policy_source=""
+  local extra_fields=""
+
+  sink="$(kxxx_broker_audit_log_file)"
+  if ! kxxx_broker_prepare_audit_log_file "$sink"; then
+    echo "kxxx: broker audit log write failed" >&2
+    return 1
+  fi
+
+  audit_ref="$(kxxx_broker_audit_secret_ref "$ref")"
+  request_id="$(kxxx_broker_request_id)"
+  if ! kxxx_broker_emit_event "$sink" "$request_id" "request_received" "$provider" "$operation" "$repo" "$audit_ref"; then
+    echo "kxxx: broker audit log write failed" >&2
+    return 1
+  fi
+
+  if ! kxxx_broker_policy_evaluate_github_create_issue_comment "$repo" policy_decision policy_reason policy_rule policy_source; then
+    extra_fields="$(printf '"decision":"%s","policy_source":"%s","policy_rule":"%s","reason":"%s"' \
+      "$(kxxx_json_escape "${policy_decision:-deny}")" \
+      "$(kxxx_json_escape "$policy_source")" \
+      "$(kxxx_json_escape "$policy_rule")" \
+      "$(kxxx_json_escape "$policy_reason")")"
+    if ! kxxx_broker_emit_event "$sink" "$request_id" "policy_decision" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+      echo "kxxx: broker audit log write failed" >&2
+      return 1
+    fi
+    echo "kxxx: broker policy denied github.create_issue_comment for repo=$repo" >&2
+    return 1
+  fi
+
+  extra_fields="$(printf '"decision":"%s","policy_source":"%s","policy_rule":"%s","reason":"%s"' \
+    "$(kxxx_json_escape "$policy_decision")" \
+    "$(kxxx_json_escape "$policy_source")" \
+    "$(kxxx_json_escape "$policy_rule")" \
+    "$(kxxx_json_escape "$policy_reason")")"
+  if ! kxxx_broker_emit_event "$sink" "$request_id" "policy_decision" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+    echo "kxxx: broker audit log write failed" >&2
+    return 1
+  fi
+
+  backend="$(kxxx_broker_secret_backend_for_ref "$ref")"
+  if ! impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$backend" 2>/dev/null)"; then
+    impl_backend="unknown"
+  fi
+  extra_fields="$(printf '"backend":"%s","result":"attempted"' \
+    "$(kxxx_json_escape "$backend")")"
+  if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_backend_access" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+    echo "kxxx: broker audit log write failed" >&2
+    return 1
+  fi
+
+  if [[ "$impl_backend" != "memory" && "$impl_backend" != "unknown" && -z "$service" ]]; then
+    extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"service_required_for_backend_ref"' \
+      "$(kxxx_json_escape "$backend")")"
+    if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+      echo "kxxx: broker audit log write failed" >&2
+      return 1
+    fi
+    echo "kxxx: --service is required for backend-managed secret refs" >&2
+    return 1
+  fi
+
+  if ! token="$(kxxx_backend_get_ref "$service" "$ref")"; then
+    extra_fields="$(printf '"backend":"%s","result":"unresolved","reason":"secret_ref_unresolved"' \
+      "$(kxxx_json_escape "$backend")")"
+    if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+      echo "kxxx: broker audit log write failed" >&2
+      return 1
+    fi
+    echo "kxxx: secret ref could not be resolved" >&2
+    return 1
+  fi
+
+  extra_fields="$(printf '"backend":"%s","result":"resolved"' \
+    "$(kxxx_json_escape "$backend")")"
+  if ! kxxx_broker_emit_event "$sink" "$request_id" "secret_resolution" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+    echo "kxxx: broker audit log write failed" >&2
+    return 1
+  fi
+
+  if ! kxxx_github_http_create_issue_comment "$token" "$repo" "$issue_number" "$body" response http_status; then
+    extra_fields="$(printf '"result":"error","http_status":"%s","reason":"provider_request_failed"' \
+      "$(kxxx_json_escape "${http_status:-transport}")")"
+    if ! kxxx_broker_emit_event "$sink" "$request_id" "provider_result" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+      echo "kxxx: broker audit log write failed" >&2
+      return 1
+    fi
+    echo "kxxx: broker provider request failed" >&2
+    return 1
+  fi
+
+  comment_id="$(kxxx_broker_json_extract_number "$response" "id")"
+  comment_url="$(kxxx_broker_json_extract_string "$response" "html_url")"
+
+  extra_fields="$(printf '"result":"success","http_status":"%s"' \
+    "$(kxxx_json_escape "$http_status")")"
+  if [[ -n "$comment_id" ]]; then
+    extra_fields="${extra_fields},$(printf '"comment_id":"%s"' "$(kxxx_json_escape "$comment_id")")"
+  fi
+  if ! kxxx_broker_emit_event "$sink" "$request_id" "provider_result" "$provider" "$operation" "$repo" "$audit_ref" "$extra_fields"; then
+    kxxx_broker_warn_post_provider_audit_failure
+  fi
+
+  printf '{"status":"ok","provider":"github","operation":"create_issue_comment","repo":"%s","issue_number":"%s"' \
+    "$(kxxx_json_escape "$repo")" \
+    "$(kxxx_json_escape "$issue_number")"
+  if [[ -n "$comment_id" ]]; then
+    printf ',"comment_id":%s' "$comment_id"
+  fi
+  if [[ -n "$comment_url" ]]; then
+    printf ',"comment_url":"%s"' "$(kxxx_json_escape "$comment_url")"
   fi
   printf '}\n'
 }

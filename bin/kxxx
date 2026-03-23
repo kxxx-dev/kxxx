@@ -47,6 +47,7 @@ Usage:
   kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--backend <name>] [--strict]
   kxxx run [--repo <auto|name>] [--service <name>] [--backend <name>] -- <command...>
   kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
+  kxxx broker github.create_issue_comment [--service <name>] --ref <secret-ref> --repo <owner/repo> --issue <number> --body <body>
   kxxx broker audit [--file <path>]
   kxxx migrate import [--dry-run|--apply] [--service <name>] [--backend <name>] [--keys-root <path>]
   kxxx migrate service [--from <name>] [--to <name>] [--from-backend <name>] [--to-backend <name>] [--dry-run|--apply]
