@@ -9,9 +9,13 @@ brew tap kxxx-dev/kxxx && brew install kxxx
 # Store a secret
 kxxx set env/GITHUB_TOKEN --stdin < ~/.secrets/github-token
 
+# Allow the broker to act on a specific repo
+mkdir -p ~/.config/kxxx/broker
+echo "octo/repo" > ~/.config/kxxx/broker/github.create_issue.repos
+
 # Agent-safe: broker an operation without exposing the secret
 ref="$(kxxx ref env/GITHUB_TOKEN --service kxxx.secrets)"
-kxxx broker github.create_issue --ref "$ref" --repo octo/repo --title "hello"
+kxxx broker github.create_issue --service kxxx.secrets --ref "$ref" --repo octo/repo --title "hello"
 ```
 
 ---
