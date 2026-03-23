@@ -1,5 +1,21 @@
 # kxxx
 
+> **Agent-safe secret runtime** — broker operations through `kxxx` so LLMs and agentic tools never see raw credentials.
+
+```bash
+# Install
+brew tap kxxx-dev/kxxx && brew install kxxx
+
+# Store a secret
+kxxx set env/GITHUB_TOKEN --stdin < ~/.secrets/github-token
+
+# Agent-safe: broker an operation without exposing the secret
+ref="$(kxxx ref env/GITHUB_TOKEN --service kxxx.secrets)"
+kxxx broker github.create_issue --ref "$ref" --repo octo/repo --title "hello"
+```
+
+---
+
 `kxxx` is a secret runtime for local developer workflows that is being repositioned around an agent-safe execution model.
 
 Today, it can still do familiar compatibility-path work such as resolving secrets, exporting env vars, and launching child processes with injected secrets. But the intended direction is different: new integrations should prefer a brokered safe path where `kxxx` remains the policy and secret-resolution boundary, and the caller receives only the minimum result metadata needed to continue.
