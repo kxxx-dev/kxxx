@@ -285,6 +285,7 @@ seed_encrypted_file_account() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *'"implemented":false'* ]]
+  [[ "$output" == *'"headless_capable":"unknown"'* ]]
   [[ "$output" == *'"warnings":['* ]]
   [[ "$output" == *'backend is declared but not yet implemented'* ]]
 }
@@ -294,6 +295,7 @@ seed_encrypted_file_account() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *'"implemented":false'* ]]
+  [[ "$output" == *'"headless_capable":"unknown"'* ]]
   [[ "$output" == *'backend is declared but not yet implemented'* ]]
 }
 

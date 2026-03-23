@@ -283,8 +283,12 @@ kxxx_backend_info() {
   fi
 
   if [[ "$output" == "json" ]]; then
-    local headless_json="false" implemented_json="false"
-    [[ "$headless" == "true" ]] && headless_json="true"
+    local headless_json="" implemented_json="false"
+    case "$headless" in
+      true)    headless_json="true" ;;
+      false)   headless_json="false" ;;
+      *)       headless_json="\"$headless\"" ;;
+    esac
     [[ "$implemented" == "true" ]] && implemented_json="true"
 
     printf '{"requested_backend":"%s","resolved_backend":"%s","headless_capable":%s,"interactive_unlock":"%s","implemented":%s,"warnings":[' \
