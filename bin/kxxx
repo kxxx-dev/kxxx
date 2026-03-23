@@ -46,6 +46,7 @@ Usage:
   kxxx list [--service <name>] [--backend <name>] [--json]
   kxxx env [--repo <auto|name>] [--shell <zsh|bash|dotenv|json>] [--service <name>] [--backend <name>] [--strict]
   kxxx run [--repo <auto|name>] [--service <name>] [--backend <name>] -- <command...>
+  kxxx backend info [--backend <name>] [--json]
   kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
   kxxx broker audit [--file <path>]
   kxxx migrate import [--dry-run|--apply] [--service <name>] [--backend <name>] [--keys-root <path>]
@@ -398,6 +399,61 @@ USAGE
   printf '%s\n' "${accounts[@]}"
 }
 
+cmd_backend_info() {
+  local backend="${KXXX_BACKEND:-auto}" output="text"
+  while (($# > 0)); do
+    case "$1" in
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
+      --json)
+        output="json"
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx backend info [--backend <name>] [--json]
+USAGE
+        return 0
+        ;;
+      --*)
+        kxxx_die "unknown option: $1"
+        ;;
+      *)
+        kxxx_die "unexpected argument: $1"
+        ;;
+    esac
+    shift || true
+  done
+
+  kxxx_backend_info "$backend" "$output"
+}
+
+cmd_backend() {
+  [[ $# -gt 0 ]] || kxxx_die "backend subcommand is required (info)"
+  local sub="$1"
+  shift
+  case "$sub" in
+    info)
+      cmd_backend_info "$@"
+      ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: kxxx backend <info>
+USAGE
+      return 0
+      ;;
+    *)
+      kxxx_die "unknown backend subcommand: $sub"
+      ;;
+  esac
+}
+
 cmd_env() {
   kxxx_env_main "$@"
 }
@@ -458,6 +514,9 @@ main() {
       ;;
     run)
       cmd_run "$@"
+      ;;
+    backend)
+      cmd_backend "$@"
       ;;
     broker)
       cmd_broker "$@"

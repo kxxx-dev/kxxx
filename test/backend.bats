@@ -250,3 +250,91 @@ seed_encrypted_file_account() {
   [ "$status" -eq 2 ]
   [[ "$output" == *"backend is declared but not implemented yet: wincred"* ]]
 }
+
+@test "backend info shows auto-resolved backend in text format" {
+  run_kxxx_default backend info
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"requested_backend: auto"* ]]
+  [[ "$output" == *"resolved_backend:"* ]]
+  [[ "$output" == *"implemented:"* ]]
+}
+
+@test "backend info shows encrypted-file in JSON format" {
+  run_kxxx_linux_encrypted backend info --backend encrypted-file --json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"resolved_backend":"encrypted-file"'* ]]
+  [[ "$output" == *'"headless_capable":true'* ]]
+  [[ "$output" == *'"interactive_unlock":"false"'* ]]
+  [[ "$output" == *'"implemented":true'* ]]
+}
+
+@test "backend info shows darwin-keychain capabilities in JSON" {
+  run_kxxx_default backend info --backend darwin-keychain --json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"resolved_backend":"darwin-keychain"'* ]]
+  [[ "$output" == *'"headless_capable":false'* ]]
+  [[ "$output" == *'"interactive_unlock":"possible"'* ]]
+  [[ "$output" == *'"implemented":true'* ]]
+}
+
+@test "backend info shows secret-service as unimplemented with warning" {
+  run_kxxx_default backend info --backend secret-service --json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"implemented":false'* ]]
+  [[ "$output" == *'"warnings":['* ]]
+  [[ "$output" == *'backend is declared but not yet implemented'* ]]
+}
+
+@test "backend info shows wincred as unimplemented with warning" {
+  run_kxxx_default backend info --backend wincred --json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"implemented":false'* ]]
+  [[ "$output" == *'backend is declared but not yet implemented'* ]]
+}
+
+@test "backend info accepts memory backend with test-only warning" {
+  run_kxxx_default backend info --backend memory --json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"implemented":true'* ]]
+  [[ "$output" == *'memory backend is test-only and blocked at the CLI boundary'* ]]
+}
+
+@test "backend info shows encrypted-file missing key warning" {
+  run env \
+    HOME="$KXXX_TEST_HOME" \
+    KXXX_BROKER_HOME="$KXXX_TEST_HOME" \
+    PATH="$KXXX_TEST_BIN:$KXXX_ORIG_PATH" \
+    "$KXXX_BIN" \
+    backend info --backend encrypted-file --json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'KXXX_ENCRYPTED_FILE_KEY is not set'* ]]
+}
+
+@test "backend info rejects unknown backend" {
+  run_kxxx_default backend info --backend bogus
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unsupported backend: bogus"* ]]
+}
+
+@test "backend info --help exits 0" {
+  run_kxxx_default backend info --help
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Usage:"* ]]
+}
+
+@test "backend info normalizes keychain alias" {
+  run_kxxx_default backend info --backend keychain --json
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"requested_backend":"keychain"'* ]]
+  [[ "$output" == *'"resolved_backend":"darwin-keychain"'* ]]
+}
