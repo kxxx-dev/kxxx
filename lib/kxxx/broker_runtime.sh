@@ -489,9 +489,9 @@ kxxx_broker_execute_github_create_issue_comment() {
     kxxx_broker_warn_post_provider_audit_failure
   fi
 
-  printf '{"status":"ok","provider":"github","operation":"create_issue_comment","repo":"%s","issue_number":"%s"' \
+  printf '{"status":"ok","provider":"github","operation":"create_issue_comment","repo":"%s","issue_number":%s' \
     "$(kxxx_json_escape "$repo")" \
-    "$(kxxx_json_escape "$issue_number")"
+    "$issue_number"
   if [[ -n "$comment_id" ]]; then
     printf ',"comment_id":%s' "$comment_id"
   fi
