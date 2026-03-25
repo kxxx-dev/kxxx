@@ -236,3 +236,94 @@ kxxx_backend_create_ref() {
   ref_backend="$(kxxx_backend_ref_tag_for_backend "$backend")"
   kxxx_secret_ref_create "$ref_backend" "$id"
 }
+
+kxxx_backend_implemented() {
+  case "$1" in
+    darwin-keychain|encrypted-file|memory)
+      printf 'true\n'
+      ;;
+    secret-service|wincred)
+      printf 'false\n'
+      ;;
+    *)
+      printf 'false\n'
+      ;;
+  esac
+}
+
+kxxx_backend_info() {
+  local requested="$1" output="${2:-text}"
+  local normalized="" resolved=""
+  local headless="" interactive="" implemented=""
+  local -a warnings=()
+
+  normalized="$(kxxx_backend_normalize_name "$requested")" || kxxx_die "unsupported backend: $requested"
+
+  if [[ "$normalized" == "auto" ]]; then
+    resolved="$(kxxx_backend_auto_name)"
+  else
+    resolved="$normalized"
+  fi
+
+  headless="$(kxxx_backend_capability_headless "$resolved")"
+  interactive="$(kxxx_backend_capability_interactive_unlock "$resolved")"
+  implemented="$(kxxx_backend_implemented "$resolved")"
+
+  if [[ "$implemented" == "false" ]]; then
+    warnings+=("backend is declared but not yet implemented")
+  fi
+  if [[ "$resolved" == "memory" ]]; then
+    warnings+=("memory backend is test-only and blocked at the CLI boundary")
+  fi
+  if [[ "$resolved" == "darwin-keychain" && "${OSTYPE:-}" != darwin* ]]; then
+    warnings+=("darwin-keychain selected on a non-macOS host")
+  fi
+  if [[ "$resolved" == "encrypted-file" && -z "${KXXX_ENCRYPTED_FILE_KEY:-}" ]]; then
+    warnings+=("KXXX_ENCRYPTED_FILE_KEY is not set; operations will fail")
+  fi
+
+  if [[ "$output" == "json" ]]; then
+    local headless_json="" implemented_json="false"
+    case "$headless" in
+      true)    headless_json="true" ;;
+      false)   headless_json="false" ;;
+      *)       headless_json="\"$headless\"" ;;
+    esac
+    [[ "$implemented" == "true" ]] && implemented_json="true"
+
+    printf '{"requested_backend":"%s","resolved_backend":"%s","headless_capable":%s,"interactive_unlock":"%s","implemented":%s,"warnings":[' \
+      "$(kxxx_json_escape "$requested")" \
+      "$(kxxx_json_escape "$resolved")" \
+      "$headless_json" \
+      "$(kxxx_json_escape "$interactive")" \
+      "$implemented_json"
+
+    local first=1 w=""
+    for w in "${warnings[@]+"${warnings[@]}"}"; do
+      if [[ $first -eq 0 ]]; then
+        printf ','
+      fi
+      first=0
+      printf '"%s"' "$(kxxx_json_escape "$w")"
+    done
+
+    printf ']}\n'
+    return 0
+  fi
+
+  printf 'requested_backend: %s\n' "$requested"
+  printf 'resolved_backend:  %s\n' "$resolved"
+  printf 'headless_capable:  %s\n' "$headless"
+  printf 'interactive_unlock: %s\n' "$interactive"
+  printf 'implemented:       %s\n' "$implemented"
+
+  if [[ ${#warnings[@]} -eq 0 ]]; then
+    printf 'warnings:          none\n'
+  else
+    printf 'warnings:\n'
+    local w=""
+    for w in "${warnings[@]}"; do
+      printf '  - %s\n' "$w"
+    done
+  fi
+}
