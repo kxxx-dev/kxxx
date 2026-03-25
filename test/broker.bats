@@ -53,7 +53,9 @@ teardown() {
     kxxx_broker_home_dir \
     kxxx_broker_emit_event \
     kxxx_broker_policy_load_github_create_issue_allow_repos \
-    kxxx_github_http_create_issue || true
+    kxxx_broker_policy_load_github_create_issue_comment_allow_repos \
+    kxxx_github_http_create_issue \
+    kxxx_github_http_create_issue_comment || true
 }
 
 @test "top-level help distinguishes safe path from compatibility path" {
@@ -71,7 +73,7 @@ teardown() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"\`broker\` is the preferred safe path for new integrations."* ]]
-  [[ "$output" == *"This MVP only supports github.create_issue."* ]]
+  [[ "$output" == *"Supported operations: github.create_issue, github.create_issue_comment."* ]]
   [[ "$output" == *"Compatibility-path commands (\`get\`, \`env\`, \`run\`) can materialize raw secret values"* ]]
   [[ "$output" == *"Canonical threat model: https://github.com/kxxx-dev/kxxx/blob/main/docs/adr/0001-agent-safe-secret-runtime.md"* ]]
 }
@@ -502,6 +504,140 @@ EOF
   [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "-q" ]]
   [[ "$status_code" == "201" ]]
   [[ "$response" == *'"number":7'* ]]
+}
+
+@test "github.create_issue_comment emits structured audit sequence without exposing the secret" {
+  local secret="github_pat_comment_secret_value_123456789"
+  local ref=""
+  local audit_path=""
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue_comment.repos"
+  local request_id=""
+  local combined_output=""
+
+  kxxx_secret_memory_store "$secret" "comment-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_github_http_create_issue_comment() {
+    local token="$1" repo="$2" issue_number="$3" body="$4"
+    local -n response_ref="$5"
+    local -n status_ref="$6"
+
+    printf '%s' "$token" > "$KXXX_TEST_PROVIDER_MARKER"
+    [[ "$repo" == "octo/repo" ]]
+    [[ "$issue_number" == "7" ]]
+    [[ "$body" == "nice work" ]]
+    response_ref='{"id":101,"html_url":"https://github.com/octo/repo/issues/7#issuecomment-101"}'
+    status_ref="201"
+    return 0
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue_comment --ref "$ref" --repo octo/repo --issue 7 --body "nice work"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"operation":"create_issue_comment"'* ]]
+  [[ "$output" == *'"comment_id":101'* ]]
+  [[ "$output" == *'"comment_url":"https://github.com/octo/repo/issues/7#issuecomment-101"'* ]]
+  [[ -z "$stderr" ]]
+  [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "$secret" ]]
+
+  audit_path="$(broker_test_default_audit_log)"
+  [ -f "$audit_path" ]
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 5 ]
+
+  request_id="$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "request_id")"
+  [[ -n "$request_id" ]]
+
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "event")" == "request_received" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "event")" == "policy_decision" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "event")" == "secret_backend_access" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "event")" == "secret_resolution" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "event")" == "provider_result" ]]
+
+  local line=""
+  for line in "${BROKER_TEST_AUDIT_LINES[@]}"; do
+    [[ "$(broker_test_json_string "$line" "kind")" == "broker_audit" ]]
+    [[ "$(broker_test_json_string "$line" "request_id")" == "$request_id" ]]
+    [[ "$(broker_test_json_string "$line" "tool")" == "kxxx" ]]
+    [[ "$(broker_test_json_string "$line" "provider")" == "github" ]]
+    [[ "$(broker_test_json_string "$line" "operation")" == "create_issue_comment" ]]
+    [[ "$(broker_test_json_string "$line" "resource_type")" == "github_repo" ]]
+    [[ "$(broker_test_json_string "$line" "resource")" == "octo/repo" ]]
+    [[ "$(broker_test_json_string "$line" "secret_ref")" == "$ref" ]]
+  done
+
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "decision")" == "allow" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "reason")" == "repo_allowlist_match" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "memory" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "result")" == "attempted" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "backend")" == "memory" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "result")" == "resolved" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "result")" == "success" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "http_status")" == "201" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "comment_id")" == "101" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
+}
+
+@test "github.create_issue_comment policy deny blocks execution" {
+  local secret="github_pat_comment_deny_secret_123456789"
+  local ref=""
+  local audit_path="$BATS_TEST_TMPDIR/comment-policy-deny.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue_comment.repos"
+  local combined_output=""
+
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
+  kxxx_secret_memory_store "$secret" "comment-deny-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/allowed" > "$policy_file"
+
+  kxxx_github_http_create_issue_comment() {
+    printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
+    return 99
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue_comment --ref "$ref" --repo octo/denied --issue 7 --body "blocked"
+
+  [ "$status" -ne 0 ]
+  [[ -z "$output" ]]
+  [[ "$stderr" == *'broker policy denied github.create_issue_comment for repo=octo/denied'* ]]
+  [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
+
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 2 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "event")" == "request_received" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "event")" == "policy_decision" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "decision")" == "deny" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "reason")" == "repo_not_allowlisted" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
+}
+
+@test "github.create_issue_comment uses separate policy file from github.create_issue" {
+  local secret="github_pat_separate_policy_secret_123456789"
+  local ref=""
+  local issue_policy="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local comment_policy="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue_comment.repos"
+
+  kxxx_secret_memory_store "$secret" "separate-policy-ref" ref
+  mkdir -p "$(dirname "$issue_policy")"
+
+  printf '%s\n' "octo/repo" > "$issue_policy"
+
+  kxxx_github_http_create_issue_comment() {
+    printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
+    return 99
+  }
+
+  run --separate-stderr kxxx_broker_main github.create_issue_comment --ref "$ref" --repo octo/repo --issue 7 --body "test"
+
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *'broker policy denied github.create_issue_comment for repo=octo/repo'* ]]
+  [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
 }
 
 @test "broker.sh resolves sibling modules when sourced through a symlink" {
