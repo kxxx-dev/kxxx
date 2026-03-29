@@ -26,85 +26,78 @@ kxxx_broker_json_extract_number() {
   fi
 }
 
-kxxx_github_http_create_issue() {
-  local token="$1" repo="$2" title="$3" body="$4"
-  local -n response_ref="$5"
-  local -n status_ref="$6"
-  local payload="" tmp_body="" curl_rc=0
+kxxx_github_http_request() {
+  local token="$1" method="$2" url="$3" payload="$4"
+  local -n _gh_resp_ref="$5"
+  local -n _gh_stat_ref="$6"
+  local tmp_body="" curl_rc=0
 
   kxxx_require_cmd curl
+
+  tmp_body="$(mktemp)"
+
+  _gh_stat_ref="$(
+    curl \
+      -q \
+      --silent \
+      --show-error \
+      --output "$tmp_body" \
+      --write-out '%{http_code}' \
+      --config <(
+        printf 'url = %s\n' "$(kxxx_broker_curl_config_escape "$url")"
+        printf 'request = "%s"\n' "$method"
+        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'Accept: application/vnd.github+json')"
+        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape "Authorization: Bearer ${token}")"
+        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'X-GitHub-Api-Version: 2022-11-28')"
+        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'Content-Type: application/json')"
+        printf 'data = %s\n' "$(kxxx_broker_curl_config_escape "$payload")"
+      )
+  )"
+  curl_rc=$?
+
+  _gh_resp_ref="$(cat "$tmp_body")"
+  rm -f "$tmp_body"
+
+  if [[ $curl_rc -ne 0 ]]; then
+    return 1
+  fi
+
+  [[ "$_gh_stat_ref" =~ ^2[0-9][0-9]$ ]]
+}
+
+kxxx_github_http_create_issue() {
+  local token="$1" repo="$2" title="$3" body="$4"
+  local _resp_var="$5" _stat_var="$6"
+  local payload=""
 
   payload="$(printf '{"title":"%s","body":"%s"}' \
     "$(kxxx_json_escape "$title")" \
     "$(kxxx_json_escape "$body")")"
-  tmp_body="$(mktemp)"
 
-  status_ref="$(
-    curl \
-      -q \
-      --silent \
-      --show-error \
-      --output "$tmp_body" \
-      --write-out '%{http_code}' \
-      --config <(
-        printf 'url = %s\n' "$(kxxx_broker_curl_config_escape "https://api.github.com/repos/${repo}/issues")"
-        printf 'request = "POST"\n'
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'Accept: application/vnd.github+json')"
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape "Authorization: Bearer ${token}")"
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'X-GitHub-Api-Version: 2022-11-28')"
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'Content-Type: application/json')"
-        printf 'data = %s\n' "$(kxxx_broker_curl_config_escape "$payload")"
-      )
-  )"
-  curl_rc=$?
-
-  response_ref="$(cat "$tmp_body")"
-  rm -f "$tmp_body"
-
-  if [[ $curl_rc -ne 0 ]]; then
-    return 1
-  fi
-
-  [[ "$status_ref" =~ ^2[0-9][0-9]$ ]]
+  kxxx_github_http_request "$token" "POST" \
+    "https://api.github.com/repos/${repo}/issues" \
+    "$payload" "$_resp_var" "$_stat_var"
 }
 
 kxxx_github_http_create_issue_comment() {
   local token="$1" repo="$2" issue_number="$3" body="$4"
-  local -n response_ref="$5"
-  local -n status_ref="$6"
-  local payload="" tmp_body="" curl_rc=0
-
-  kxxx_require_cmd curl
+  local _resp_var="$5" _stat_var="$6"
+  local payload=""
 
   payload="$(printf '{"body":"%s"}' \
     "$(kxxx_json_escape "$body")")"
-  tmp_body="$(mktemp)"
 
-  status_ref="$(
-    curl \
-      -q \
-      --silent \
-      --show-error \
-      --output "$tmp_body" \
-      --write-out '%{http_code}' \
-      --config <(
-        printf 'url = %s\n' "$(kxxx_broker_curl_config_escape "https://api.github.com/repos/${repo}/issues/${issue_number}/comments")"
-        printf 'request = "POST"\n'
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'Accept: application/vnd.github+json')"
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape "Authorization: Bearer ${token}")"
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'X-GitHub-Api-Version: 2022-11-28')"
-        printf 'header = %s\n' "$(kxxx_broker_curl_config_escape 'Content-Type: application/json')"
-        printf 'data = %s\n' "$(kxxx_broker_curl_config_escape "$payload")"
-      )
-  )"
-  curl_rc=$?
+  kxxx_github_http_request "$token" "POST" \
+    "https://api.github.com/repos/${repo}/issues/${issue_number}/comments" \
+    "$payload" "$_resp_var" "$_stat_var"
+}
 
-  response_ref="$(cat "$tmp_body")"
-  rm -f "$tmp_body"
+kxxx_github_http_close_issue() {
+  local token="$1" repo="$2" issue_number="$3"
+  local _resp_var="$4" _stat_var="$5"
+  local payload='{"state":"closed"}'
 
-  if [[ $curl_rc -ne 0 ]]; then
-    return 1
-  fi
-
-  [[ "$status_ref" =~ ^2[0-9][0-9]$ ]]
+  kxxx_github_http_request "$token" "PATCH" \
+    "https://api.github.com/repos/${repo}/issues/${issue_number}" \
+    "$payload" "$_resp_var" "$_stat_var"
 }

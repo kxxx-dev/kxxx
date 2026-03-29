@@ -1,0 +1,390 @@
+#!/usr/bin/env bash
+
+cmd_set() {
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account="" mode="prompt" value=""
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
+      --service=*)
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
+      --value)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --value"
+        [[ "$mode" == "prompt" ]] || kxxx_die "only one of --value or --stdin is allowed"
+        value="$1"
+        mode="arg"
+        ;;
+      --value=*)
+        [[ "$mode" == "prompt" ]] || kxxx_die "only one of --value or --stdin is allowed"
+        value="${1#*=}"
+        mode="arg"
+        ;;
+      --stdin)
+        [[ "$mode" == "prompt" ]] || kxxx_die "only one of --value or --stdin is allowed"
+        mode="stdin" ;;
+      --json)
+        output="json" ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx set <account> [--value <value>|--stdin] [--json] [--service <name>] [--backend <name>]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        if [[ -z "$account" ]]; then
+          account="$1"
+        else
+          kxxx_die "unexpected argument: $1"
+        fi ;;
+    esac
+    shift || true
+  done
+
+  [[ -n "$account" ]] || kxxx_die "account is required"
+
+  case "$mode" in
+    stdin)
+      value="$(cat)"
+      ;;
+    prompt)
+      read -r -s "value?value: "
+      echo
+      ;;
+  esac
+
+  kxxx_identity_set_descriptor "$service" "$account" "$value" "$backend"
+  if [[ "$output" == "json" ]]; then
+    printf '{"status":"ok","service":"%s","account":"%s"}\n' \
+      "$(kxxx_json_escape "$service")" \
+      "$(kxxx_json_escape "$account")"
+  fi
+}
+
+cmd_ref() {
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account="" resolved_ref=""
+  local backend_selected=0
+  [[ -n "${KXXX_BACKEND:-}" ]] && backend_selected=1
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
+      --service=*)
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        backend_selected=1
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        backend_selected=1
+        ;;
+      --json)
+        output="json"
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx ref <account> [--service <name>] [--backend <name>] [--json]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        if [[ -z "$account" ]]; then
+          account="$1"
+        else
+          kxxx_die "unexpected argument: $1"
+        fi ;;
+    esac
+    shift || true
+  done
+
+  [[ -n "$account" ]] || kxxx_die "account is required"
+  kxxx_identity_get_descriptor_ref "$service" "$account" resolved_ref || return 1
+
+  if [[ "$backend_selected" -eq 1 ]]; then
+    local selected_backend="" ref_backend="" ref_impl_backend="" ref_id=""
+    selected_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+    kxxx_secret_ref_parse "$resolved_ref" ref_backend ref_id || return 1
+    ref_impl_backend="$(kxxx_backend_impl_name_for_ref_backend "$ref_backend")" || return 1
+    [[ "$selected_backend" == "$ref_impl_backend" ]] || kxxx_die "descriptor is not managed by backend=$selected_backend"
+  fi
+
+  if [[ "$output" == "json" ]]; then
+    printf '{"status":"ok","service":"%s","account":"%s","secret_ref":"%s"}\n' \
+      "$(kxxx_json_escape "$service")" \
+      "$(kxxx_json_escape "$account")" \
+      "$(kxxx_json_escape "$resolved_ref")"
+    return 0
+  fi
+
+  printf '%s\n' "$resolved_ref"
+}
+
+cmd_get() {
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" fallback_service="" account=""
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
+      --service=*)
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
+      --fallback-service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --fallback-service"
+        fallback_service="$1"
+        ;;
+      --fallback-service=*)
+        fallback_service="${1#*=}"
+        [[ -n "$fallback_service" ]] || kxxx_die "missing value for --fallback-service"
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx get <account> [--service <name>] [--backend <name>] [--fallback-service <name>]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        if [[ -z "$account" ]]; then
+          account="$1"
+        else
+          kxxx_die "unexpected argument: $1"
+        fi ;;
+    esac
+    shift || true
+  done
+
+  [[ -n "$account" ]] || kxxx_die "account is required"
+
+  local value=""
+  local rc=0
+  local resolved_backend=""
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+
+  if kxxx_identity_get_descriptor "$service" "$account" "$resolved_backend" value; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [[ $rc -eq 0 ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  if [[ $rc -eq 2 ]]; then
+    return 1
+  fi
+
+  if kxxx_backend_get_account "$resolved_backend" "$service" "$account"; then
+    return 0
+  fi
+
+  if [[ -n "$fallback_service" ]]; then
+    if kxxx_identity_get_descriptor "$fallback_service" "$account" "$resolved_backend" value; then
+      rc=0
+    else
+      rc=$?
+    fi
+    if [[ $rc -eq 0 ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+
+    if [[ $rc -eq 2 ]]; then
+      return 1
+    fi
+
+    kxxx_backend_get_account "$resolved_backend" "$fallback_service" "$account" && return 0
+  fi
+
+  return 1
+}
+
+cmd_list() {
+  local service="${KXXX_DEFAULT_SERVICE}" backend="${KXXX_BACKEND:-auto}" output="text" account
+  local backend_selected=0
+  [[ -n "${KXXX_BACKEND:-}" ]] && backend_selected=1
+  while (($# > 0)); do
+    case "$1" in
+      --service)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --service"
+        service="$1"
+        ;;
+      --service=*)
+        service="${1#*=}"
+        [[ -n "$service" ]] || kxxx_die "missing value for --service"
+        ;;
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        backend_selected=1
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        backend_selected=1
+        ;;
+      --json)
+        output="json"
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx list [--service <name>] [--backend <name>] [--json]
+USAGE
+        return 0 ;;
+      --*)
+        kxxx_die "unknown option: $1" ;;
+      *)
+        kxxx_die "unexpected argument: $1" ;;
+    esac
+    shift || true
+  done
+
+  local -a accounts=()
+  local -a indexed_accounts=()
+  local -a direct_accounts=()
+  local account=""
+  local resolved_backend=""
+  local -A seen_accounts=()
+
+  resolved_backend="$(kxxx_backend_resolve_cli_name "$backend")" || return 1
+  if [[ "$backend_selected" -eq 1 ]]; then
+    mapfile -t indexed_accounts < <(kxxx_identity_list_descriptors_for_backend "$service" "$backend")
+  else
+    mapfile -t indexed_accounts < <(kxxx_identity_list_descriptors "$service")
+  fi
+  mapfile -t direct_accounts < <(kxxx_backend_list_accounts "$resolved_backend" "$service")
+
+  for account in "${indexed_accounts[@]}"; do
+    [[ -n "$account" ]] || continue
+    [[ -n "${seen_accounts[$account]+x}" ]] && continue
+    seen_accounts["$account"]=1
+    accounts+=("$account")
+  done
+
+  for account in "${direct_accounts[@]}"; do
+    [[ -n "$account" ]] || continue
+    if [[ "$account" == ref/* ]]; then
+      continue
+    fi
+    [[ -n "${seen_accounts[$account]+x}" ]] && continue
+    seen_accounts["$account"]=1
+    accounts+=("$account")
+  done
+
+  if [[ ${#accounts[@]} -gt 0 ]]; then
+    mapfile -t accounts < <(printf '%s\n' "${accounts[@]}" | sort)
+  fi
+
+  if [[ "$output" == "json" ]]; then
+    local first=1
+    printf '{'
+    printf '"service":"%s","accounts":[' "$(kxxx_json_escape "$service")"
+    for account in "${accounts[@]}"; do
+      if [[ $first -eq 0 ]]; then
+        printf ','
+      fi
+      first=0
+      printf '"%s"' "$(kxxx_json_escape "$account")"
+    done
+    printf ']}\n'
+    return 0
+  fi
+
+  printf '%s\n' "${accounts[@]}"
+}
+
+cmd_backend_info() {
+  local backend="${KXXX_BACKEND:-auto}" output="text"
+  while (($# > 0)); do
+    case "$1" in
+      --backend)
+        shift
+        [[ $# -gt 0 ]] || kxxx_die "missing value for --backend"
+        backend="$1"
+        ;;
+      --backend=*)
+        backend="${1#*=}"
+        [[ -n "$backend" ]] || kxxx_die "missing value for --backend"
+        ;;
+      --json)
+        output="json"
+        ;;
+      -h|--help)
+        cat <<'USAGE'
+Usage: kxxx backend info [--backend <name>] [--json]
+USAGE
+        return 0
+        ;;
+      --*)
+        kxxx_die "unknown option: $1"
+        ;;
+      *)
+        kxxx_die "unexpected argument: $1"
+        ;;
+    esac
+    shift || true
+  done
+
+  kxxx_backend_info "$backend" "$output"
+}
+
+cmd_backend() {
+  [[ $# -gt 0 ]] || kxxx_die "backend subcommand is required (info)"
+  local sub="$1"
+  shift
+  case "$sub" in
+    info)
+      cmd_backend_info "$@"
+      ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: kxxx backend <info>
+USAGE
+      return 0
+      ;;
+    *)
+      kxxx_die "unknown backend subcommand: $sub"
+      ;;
+  esac
+}

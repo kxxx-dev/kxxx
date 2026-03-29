@@ -52,10 +52,10 @@ teardown() {
   unset -f \
     kxxx_broker_home_dir \
     kxxx_broker_emit_event \
-    kxxx_broker_policy_load_github_create_issue_allow_repos \
-    kxxx_broker_policy_load_github_create_issue_comment_allow_repos \
+    kxxx_broker_policy_load_allow_repos \
     kxxx_github_http_create_issue \
-    kxxx_github_http_create_issue_comment || true
+    kxxx_github_http_create_issue_comment \
+    kxxx_github_http_close_issue || true
 }
 
 @test "top-level help distinguishes safe path from compatibility path" {
@@ -73,7 +73,7 @@ teardown() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"\`broker\` is the preferred safe path for new integrations."* ]]
-  [[ "$output" == *"Supported operations: github.create_issue, github.create_issue_comment."* ]]
+  [[ "$output" == *"Supported operations: github.create_issue, github.create_issue_comment, github.close_issue."* ]]
   [[ "$output" == *"Compatibility-path commands (\`get\`, \`env\`, \`run\`) can materialize raw secret values"* ]]
   [[ "$output" == *"Canonical threat model: https://github.com/kxxx-dev/kxxx/blob/main/docs/adr/0001-agent-safe-secret-runtime.md"* ]]
 }
@@ -637,6 +637,133 @@ EOF
 
   [ "$status" -ne 0 ]
   [[ "$stderr" == *'broker policy denied github.create_issue_comment for repo=octo/repo'* ]]
+  [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
+}
+
+@test "github.close_issue emits structured audit sequence without exposing the secret" {
+  local secret="github_pat_close_secret_value_123456789"
+  local ref=""
+  local audit_path=""
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.close_issue.repos"
+  local request_id=""
+  local combined_output=""
+
+  kxxx_secret_memory_store "$secret" "close-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/repo" > "$policy_file"
+
+  kxxx_github_http_close_issue() {
+    local token="$1" repo="$2" issue_number="$3"
+    local -n response_ref="$4"
+    local -n status_ref="$5"
+
+    printf '%s' "$token" > "$KXXX_TEST_PROVIDER_MARKER"
+    [[ "$repo" == "octo/repo" ]]
+    [[ "$issue_number" == "7" ]]
+    response_ref='{"number":7,"state":"closed","html_url":"https://github.com/octo/repo/issues/7"}'
+    status_ref="200"
+    return 0
+  }
+
+  run --separate-stderr kxxx_broker_main github.close_issue --ref "$ref" --repo octo/repo --issue 7
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"status":"ok"'* ]]
+  [[ "$output" == *'"operation":"close_issue"'* ]]
+  [[ "$output" == *'"issue_number":7'* ]]
+  [[ "$output" == *'"issue_url":"https://github.com/octo/repo/issues/7"'* ]]
+  [[ -z "$stderr" ]]
+  [[ "$(cat "$KXXX_TEST_PROVIDER_MARKER")" == "$secret" ]]
+
+  audit_path="$(broker_test_default_audit_log)"
+  [ -f "$audit_path" ]
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 5 ]
+
+  request_id="$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "request_id")"
+  [[ -n "$request_id" ]]
+
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "event")" == "request_received" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "event")" == "policy_decision" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "event")" == "secret_backend_access" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "event")" == "secret_resolution" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "event")" == "provider_result" ]]
+
+  local line=""
+  for line in "${BROKER_TEST_AUDIT_LINES[@]}"; do
+    [[ "$(broker_test_json_string "$line" "kind")" == "broker_audit" ]]
+    [[ "$(broker_test_json_string "$line" "request_id")" == "$request_id" ]]
+    [[ "$(broker_test_json_string "$line" "provider")" == "github" ]]
+    [[ "$(broker_test_json_string "$line" "operation")" == "close_issue" ]]
+    [[ "$(broker_test_json_string "$line" "resource")" == "octo/repo" ]]
+    [[ "$(broker_test_json_string "$line" "secret_ref")" == "$ref" ]]
+  done
+
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "decision")" == "allow" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[2]}" "backend")" == "memory" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[3]}" "result")" == "resolved" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "result")" == "success" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "http_status")" == "200" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[4]}" "issue_number")" == "7" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
+}
+
+@test "github.close_issue policy deny blocks execution" {
+  local secret="github_pat_close_deny_secret_123456789"
+  local ref=""
+  local audit_path="$BATS_TEST_TMPDIR/close-policy-deny.jsonl"
+  local policy_file="$KXXX_TEST_HOME/.config/kxxx/broker/github.close_issue.repos"
+  local combined_output=""
+
+  export KXXX_BROKER_AUDIT_LOG="$audit_path"
+  kxxx_secret_memory_store "$secret" "close-deny-ref" ref
+  mkdir -p "$(dirname "$policy_file")"
+  printf '%s\n' "octo/allowed" > "$policy_file"
+
+  kxxx_github_http_close_issue() {
+    printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
+    return 99
+  }
+
+  run --separate-stderr kxxx_broker_main github.close_issue --ref "$ref" --repo octo/denied --issue 7
+
+  [ "$status" -ne 0 ]
+  [[ -z "$output" ]]
+  [[ "$stderr" == *'broker policy denied github.close_issue for repo=octo/denied'* ]]
+  [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
+
+  broker_test_load_audit_lines "$audit_path"
+  [ "${#BROKER_TEST_AUDIT_LINES[@]}" -eq 2 ]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[0]}" "event")" == "request_received" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "event")" == "policy_decision" ]]
+  [[ "$(broker_test_json_string "${BROKER_TEST_AUDIT_LINES[1]}" "decision")" == "deny" ]]
+
+  combined_output="$(printf '%s\n%s\n%s' "$output" "$stderr" "$(cat "$audit_path")")"
+  broker_test_assert_no_leaks "$combined_output" "$secret"
+}
+
+@test "github.close_issue uses separate policy file from other operations" {
+  local secret="github_pat_close_separate_policy_123456789"
+  local ref=""
+  local issue_policy="$KXXX_TEST_HOME/.config/kxxx/broker/github.create_issue.repos"
+  local close_policy="$KXXX_TEST_HOME/.config/kxxx/broker/github.close_issue.repos"
+
+  kxxx_secret_memory_store "$secret" "close-separate-ref" ref
+  mkdir -p "$(dirname "$issue_policy")"
+
+  printf '%s\n' "octo/repo" > "$issue_policy"
+
+  kxxx_github_http_close_issue() {
+    printf 'called' > "$KXXX_TEST_PROVIDER_MARKER"
+    return 99
+  }
+
+  run --separate-stderr kxxx_broker_main github.close_issue --ref "$ref" --repo octo/repo --issue 7
+
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *'broker policy denied github.close_issue for repo=octo/repo'* ]]
   [[ ! -s "$KXXX_TEST_PROVIDER_MARKER" ]]
 }
 

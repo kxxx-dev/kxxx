@@ -58,14 +58,14 @@ kxxx_broker_usage() {
 Usage:
   kxxx broker github.create_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --title <title> [--body <body>]
   kxxx broker github.create_issue_comment [--service <name>] --ref <secret-ref> --repo <owner/repo> --issue <number> --body <body>
+  kxxx broker github.close_issue [--service <name>] --ref <secret-ref> --repo <owner/repo> --issue <number>
   kxxx broker audit [--file <path>]
 
 Notes:
   - `broker` is the preferred safe path for new integrations.
-  - Supported operations: github.create_issue, github.create_issue_comment.
+  - Supported operations: github.create_issue, github.create_issue_comment, github.close_issue.
   - Compatibility-path commands (`get`, `env`, `run`) can materialize raw secret values and remain explicit exceptions.
-  - Policy is loaded from ~/.config/kxxx/broker/github.create_issue.repos.
-  - Policy is loaded from ~/.config/kxxx/broker/github.create_issue_comment.repos.
+  - Policy is loaded from ~/.config/kxxx/broker/github.<operation>.repos.
   - Structured broker audit defaults to ~/.local/state/kxxx/broker.audit.jsonl.
   - Canonical threat model: https://github.com/kxxx-dev/kxxx/blob/main/docs/adr/0001-agent-safe-secret-runtime.md
 USAGE
@@ -156,12 +156,19 @@ kxxx_broker_main() {
   case "$operation" in
     github.create_issue)
       [[ -n "$title" ]] || kxxx_die "--title is required"
-      kxxx_broker_execute_github_create_issue "$service" "$ref" "$repo" "$title" "$body"
+      kxxx_broker_execute "github" "create_issue" "$service" "$ref" "$repo" \
+        kxxx_github_http_create_issue kxxx_broker_format_create_issue "$title" "$body"
       ;;
     github.create_issue_comment)
       [[ -n "$issue" ]] || kxxx_die "--issue is required"
       [[ -n "$body" ]] || kxxx_die "--body is required"
-      kxxx_broker_execute_github_create_issue_comment "$service" "$ref" "$repo" "$issue" "$body"
+      kxxx_broker_execute "github" "create_issue_comment" "$service" "$ref" "$repo" \
+        kxxx_github_http_create_issue_comment kxxx_broker_format_create_issue_comment "$issue" "$body"
+      ;;
+    github.close_issue)
+      [[ -n "$issue" ]] || kxxx_die "--issue is required"
+      kxxx_broker_execute "github" "close_issue" "$service" "$ref" "$repo" \
+        kxxx_github_http_close_issue kxxx_broker_format_close_issue "$issue"
       ;;
     *)
       kxxx_die "unsupported broker operation: $operation"
