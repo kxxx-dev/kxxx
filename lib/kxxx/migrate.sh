@@ -2,7 +2,6 @@
 
 kxxx_migrate_required_accounts=(
   "env/ZAI_API_KEY"
-  "env/LITELLM_MASTER_KEY"
   "env/GITHUB_MCP_TOKEN"
   "aws/maple-ogino/password"
   "aws/maple-ogino/console_login_link"
@@ -47,7 +46,7 @@ kxxx_migrate_collect_import_accounts() {
       value="${value#\'}"
 
       case "$name" in
-        ZAI_API_KEY|LITELLM_MASTER_KEY|GITHUB_MCP_TOKEN)
+        ZAI_API_KEY|GITHUB_MCP_TOKEN)
           accounts_ref+=("env/${name}")
           values_ref+=("$value")
           ;;
